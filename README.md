@@ -14,6 +14,7 @@ OpenImage is a Python-based image finder that automatically retrieves legally-sa
 - **Quality Scoring**: Ranks images by quality, resolution, metadata completeness, and relevance
 - **Comprehensive Metadata**: Returns URLs, licenses, authors, descriptions, and more
 - **Parallel Searching**: Queries multiple sources concurrently for faster results
+- **SQLite Caching**: Automatically caches API responses to avoid rate limits and improve speed
 - **Flexible CLI**: Easy-to-use command-line interface with multiple options
 - **Web GUI**: Modern web interface with live image thumbnails and visual search
 
@@ -227,8 +228,9 @@ openimage/
 │   ├── __init__.py
 │   ├── config.py              # Configuration and settings
 │   ├── models.py              # Data models (ImageResult, LicenseType)
-│   ├── image_finder.py        # Main finder class
+│   ├── image_finder.py        # Main finder class with caching
 │   ├── face_detector.py       # Face detection using OpenCV
+│   ├── cache.py               # SQLite caching system
 │   └── sources/
 │       ├── __init__.py
 │       ├── base.py            # Base source class
@@ -246,8 +248,11 @@ openimage/
 ├── static/
 │   └── css/
 │       └── style.css          # Web GUI styles
+├── data/
+│   └── image_cache.db         # SQLite cache database (auto-created)
 ├── main.py                    # CLI entry point
 ├── web_gui.py                 # Web GUI entry point
+├── cache_manager.py           # Cache management utility
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -262,6 +267,71 @@ Edit `src/config.py` to customize:
 - `MIN_IMAGE_WIDTH`: Minimum image width (default: 800)
 - `MIN_IMAGE_HEIGHT`: Minimum image height (default: 600)
 - `ENABLE_FACE_DETECTION`: Enable/disable face detection (default: True)
+
+## Caching System
+
+OpenImage automatically caches all API responses in a local SQLite database to:
+- **Avoid rate limits**: Never repeat the same API request
+- **Improve speed**: Cached results return instantly
+- **Save bandwidth**: Reduce unnecessary API calls
+
+### Cache Features
+
+- **30-day TTL**: Cache entries expire after 30 days by default
+- **Per-source caching**: Each image source is cached separately
+- **Query-specific**: Cache keys based on query + entity type + source
+- **Hit tracking**: Monitors cache usage statistics
+- **Auto-cleanup**: Expired entries can be removed
+
+### Cache Management
+
+View cache statistics:
+```bash
+python3 cache_manager.py stats
+```
+
+Search cached queries:
+```bash
+python3 cache_manager.py search "einstein"
+```
+
+Clear expired cache entries:
+```bash
+python3 cache_manager.py clear --expired
+```
+
+Clear all cache entries:
+```bash
+python3 cache_manager.py clear
+```
+
+### Cache Output
+
+When running searches, you'll see cache activity:
+```
+→ Fetching from Wikimedia Commons: Albert Einstein
+✓ Cached 10 results from Wikimedia Commons
+```
+
+Second search for the same query:
+```
+✓ Cache hit for Wikimedia Commons: Albert Einstein
+```
+
+### Cache Location
+
+- Database: `data/image_cache.db`
+- Automatically created on first search
+- Excluded from git (in `.gitignore`)
+
+### Disable Caching
+
+To disable caching programmatically:
+```python
+from src.image_finder import LicensedImageFinder
+
+finder = LicensedImageFinder(enable_cache=False)
+```
 
 ## Legal & Licensing
 

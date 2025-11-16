@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 from src.models import ImageResult
 from src.config import Config
 from src.face_detector import FaceDetector
+from src.cache import ImageCache
 from src.sources.wikimedia import WikimediaSource
 from src.sources.unsplash import UnsplashSource
 from src.sources.pexels import PexelsSource
@@ -14,10 +15,15 @@ from src.sources.pixabay import PixabaySource
 class LicensedImageFinder:
     """Find high-quality, license-safe images from multiple sources."""
 
-    def __init__(self):
-        """Initialize the image finder with all available sources."""
+    def __init__(self, enable_cache: bool = True):
+        """Initialize the image finder with all available sources.
+
+        Args:
+            enable_cache: Enable SQLite caching to avoid repeating API requests
+        """
         self.sources = []
         self.face_detector = FaceDetector() if Config.ENABLE_FACE_DETECTION else None
+        self.cache = ImageCache() if enable_cache else None
 
         # Initialize all image sources
         self._init_sources()
@@ -39,6 +45,40 @@ class LicensedImageFinder:
         if Config.PIXABAY_API_KEY:
             self.sources.append(PixabaySource(Config.PIXABAY_API_KEY))
 
+    def _search_source_with_cache(self, source, query: str, entity_type: str) -> List[ImageResult]:
+        """Search a source with cache support.
+
+        Args:
+            source: Image source to search
+            query: Search query
+            entity_type: Type of entity
+
+        Returns:
+            List of ImageResult objects
+        """
+        source_name = source.get_source_name()
+
+        # Check cache first
+        if self.cache:
+            cached_results = self.cache.get(query, entity_type, source_name)
+            if cached_results is not None:
+                print(f"✓ Cache hit for {source_name}: {query}")
+                # Convert cached dicts back to ImageResult objects
+                return [ImageResult(**result) for result in cached_results]
+
+        # Cache miss - fetch from API
+        print(f"→ Fetching from {source_name}: {query}")
+        results = source.search(query, Config.MAX_RESULTS_PER_SOURCE)
+
+        # Store in cache
+        if self.cache and results:
+            # Convert ImageResult objects to dicts for caching
+            cached_data = [result.to_dict() for result in results]
+            self.cache.set(query, entity_type, source_name, cached_data)
+            print(f"✓ Cached {len(results)} results from {source_name}")
+
+        return results
+
     def find_images(
         self,
         query: str,
@@ -59,13 +99,14 @@ class LicensedImageFinder:
         """
         all_results = []
 
-        # Search all sources in parallel for better performance
+        # Search all sources in parallel (with caching)
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.sources)) as executor:
             future_to_source = {
                 executor.submit(
-                    source.search,
+                    self._search_source_with_cache,
+                    source,
                     query,
-                    Config.MAX_RESULTS_PER_SOURCE
+                    entity_type
                 ): source for source in self.sources
             }
 
@@ -196,14 +237,21 @@ class LicensedImageFinder:
         Returns:
             Dictionary with status information
         """
-        return {
+        status = {
             'available_sources': self.get_available_sources(),
             'total_sources': len(self.sources),
             'face_detection_enabled': Config.ENABLE_FACE_DETECTION,
             'face_detection_available': self.face_detector.is_available() if self.face_detector else False,
+            'cache_enabled': self.cache is not None,
             'config': {
                 'max_results_per_source': Config.MAX_RESULTS_PER_SOURCE,
                 'min_image_width': Config.MIN_IMAGE_WIDTH,
                 'min_image_height': Config.MIN_IMAGE_HEIGHT,
             }
         }
+
+        # Add cache statistics if caching is enabled
+        if self.cache:
+            status['cache_stats'] = self.cache.get_stats()
+
+        return status
