@@ -144,7 +144,11 @@ class LicensedImageFinder:
 
         # Apply face detection for person entities if enabled
         if entity_type.lower() == "person" and require_face and self.face_detector:
-            all_results = self._filter_by_face_detection(all_results)
+            all_results = self._filter_by_face_detection(all_results, require_faces=True)
+
+        # Apply face detection to EXCLUDE faces for non-person entities
+        if entity_type.lower() != "person" and self.face_detector:
+            all_results = self._filter_by_face_detection(all_results, require_faces=False)
 
         # Apply gender filtering for person entities if enabled
         if entity_type.lower() == "person" and self.gender_detector and self.gender_classifier:
@@ -159,20 +163,24 @@ class LicensedImageFinder:
         # Return top results
         return [result.to_dict() for result in all_results[:max_results]]
 
-    def _filter_by_face_detection(self, results: List[ImageResult]) -> List[ImageResult]:
-        """Filter results to only include images with detected faces.
+    def _filter_by_face_detection(self, results: List[ImageResult], require_faces: bool = True) -> List[ImageResult]:
+        """Filter results based on face detection.
 
         Args:
             results: List of ImageResult objects
+            require_faces: If True, keep only images WITH faces. If False, keep only images WITHOUT faces.
 
         Returns:
-            Filtered list of ImageResult objects with faces
+            Filtered list of ImageResult objects
         """
         if not self.face_detector or not self.face_detector.is_available():
             return results
 
         filtered_results = []
         detection_errors = 0
+
+        filter_mode = "with faces" if require_faces else "without faces"
+        print(f"\nFiltering {len(results)} results to keep only images {filter_mode}...")
 
         for result in results:
             try:
@@ -181,20 +189,35 @@ class LicensedImageFinder:
                 )
                 result.has_face = has_face
 
-                if has_face:
-                    print(f"  ✓ Face detected in: {result.title[:50]}")
+                # Include based on require_faces parameter
+                should_include = (has_face == require_faces)
+
+                if should_include:
+                    if require_faces:
+                        print(f"  ✓ Face detected in: {result.title[:50]}")
+                    else:
+                        print(f"  ✓ No face in: {result.title[:50]}")
                     filtered_results.append(result)
                 else:
-                    print(f"  ✗ No face detected in: {result.title[:50]}")
+                    if require_faces:
+                        print(f"  ✗ No face detected in: {result.title[:50]}")
+                    else:
+                        print(f"  ✗ Face detected in: {result.title[:50]} (excluding)")
             except Exception as e:
                 print(f"  ⚠ Face detection failed for: {result.title[:50]} - {e}")
                 detection_errors += 1
-                # DO NOT include images where face detection fails
-                # This ensures we only return images with confirmed faces
+                # For require_faces=True: DO NOT include images where face detection fails
+                # For require_faces=False: Include images where face detection fails (assume no face)
+                if not require_faces:
+                    filtered_results.append(result)
 
         if detection_errors > 0:
-            print(f"\n⚠ Warning: Face detection failed for {detection_errors} images (excluded from results)")
+            if require_faces:
+                print(f"\n⚠ Warning: Face detection failed for {detection_errors} images (excluded from results)")
+            else:
+                print(f"\n⚠ Warning: Face detection failed for {detection_errors} images (included in results)")
 
+        print(f"After face filtering: {len(filtered_results)} results")
         return filtered_results
 
     def _filter_by_gender(self, results: List[ImageResult], query: str) -> List[ImageResult]:
