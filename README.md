@@ -20,14 +20,41 @@ OpenImage is a Python-based image finder that automatically retrieves legally-sa
 
 ## Installation
 
+### Option 1: Using uv (Recommended)
+
+[uv](https://github.com/astral-sh/uv) is a fast Python package installer that handles Python version management automatically.
+
+1. Install uv:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+2. Clone and setup:
+```bash
+git clone https://github.com/amrsobhy/openimage.git
+cd openimage
+uv sync  # Automatically installs Python 3.12 and all dependencies
+```
+
+3. Run commands with uv:
+```bash
+uv run python3 web_gui.py
+# or
+uv run python3 main.py "search query"
+```
+
+### Option 2: Using pip
+
 1. Clone the repository:
 ```bash
 git clone https://github.com/amrsobhy/openimage.git
 cd openimage
 ```
 
-2. Install dependencies:
+2. Create virtual environment and install dependencies:
 ```bash
+python3.12 -m venv venv  # Requires Python 3.11-3.13
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
@@ -36,6 +63,8 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env and add your API keys
 ```
+
+**Note:** Python 3.11-3.13 recommended. Python 3.14+ may have compatibility issues with some dependencies.
 
 ### API Keys (Optional but Recommended)
 
