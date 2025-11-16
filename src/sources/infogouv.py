@@ -50,23 +50,40 @@ class InfoGouvSource(ImageSource):
             List of ImageResult objects (filtered to exclude AFP credits)
         """
         if not self.is_available():
+            print(f"[Info.gouv.fr] ✗ Source not available (missing API keys)")
             return []
+
+        print(f"\n{'='*80}")
+        print(f"[Info.gouv.fr] Starting search for: '{query}'")
+        print(f"{'='*80}")
 
         results = []
 
         try:
             # Step 1: Search using Ignira API with site:info.gouv.fr filter
             search_query = f"{query} site:info.gouv.fr"
+            print(f"[Info.gouv.fr] STEP 1: Searching with Ignira API")
+            print(f"[Info.gouv.fr]   Query: '{search_query}'")
             search_results = self._search_images(search_query, max_results)
+            print(f"[Info.gouv.fr]   ✓ Found {len(search_results)} image results from search API")
 
             # Step 2: For each result, scrape the page and check credits
-            for search_result in search_results:
+            print(f"\n[Info.gouv.fr] STEP 2: Processing each result (scraping + filtering)")
+            for idx, search_result in enumerate(search_results, 1):
+                print(f"\n[Info.gouv.fr] --- Result {idx}/{len(search_results)} ---")
+                print(f"[Info.gouv.fr]   Title: {search_result.get('title', 'No title')}")
+                print(f"[Info.gouv.fr]   URL: {search_result['url']}")
+                print(f"[Info.gouv.fr]   Thumbnail: {search_result.get('thumbnail', 'None')[:80]}...")
+
                 # Extract image credit from the page
-                credit = self._extract_image_credit(search_result['url'])
+                credit = self._extract_image_credit(search_result['url'], idx, len(search_results))
 
                 # Step 3: Filter out AFP-credited images
                 if credit and self._is_afp_credit(credit):
+                    print(f"[Info.gouv.fr]   ✗ SKIPPED: AFP credit detected")
                     continue  # Skip AFP images
+
+                print(f"[Info.gouv.fr]   ✓ INCLUDED: Eligible for Etalab 2.0")
 
                 # Create ImageResult for Etalab 2.0 eligible images
                 result = ImageResult(
@@ -88,12 +105,19 @@ class InfoGouvSource(ImageSource):
 
                 # Stop if we have enough results
                 if len(results) >= max_results:
+                    print(f"[Info.gouv.fr]   Reached max_results limit ({max_results})")
                     break
 
+            print(f"\n{'='*80}")
+            print(f"[Info.gouv.fr] COMPLETE: Returning {len(results)} eligible images")
+            print(f"{'='*80}\n")
+
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching from Info.gouv.fr: {e}")
+            print(f"[Info.gouv.fr] ✗ Error fetching from Info.gouv.fr: {e}")
         except Exception as e:
-            print(f"Unexpected error in Info.gouv.fr source: {e}")
+            print(f"[Info.gouv.fr] ✗ Unexpected error in Info.gouv.fr source: {e}")
+            import traceback
+            traceback.print_exc()
 
         return results[:max_results]
 
@@ -108,7 +132,7 @@ class InfoGouvSource(ImageSource):
             List of search results
         """
         headers = {
-            'Authorization': f'Bearer {self.ignira_api_key}',
+            'Authorization': f'Bearer {self.ignira_api_key[:20]}...',
             'Content-Type': 'application/json',
             'User-Agent': Config.USER_AGENT
         }
@@ -123,27 +147,53 @@ class InfoGouvSource(ImageSource):
             }
         }
 
+        print(f"[Info.gouv.fr]   Ignira API Request:")
+        print(f"[Info.gouv.fr]     URL: {self.IGNIRA_BASE_URL}")
+        print(f"[Info.gouv.fr]     Payload: {payload}")
+
+        # Use actual API key for request
+        actual_headers = {
+            'Authorization': f'Bearer {self.ignira_api_key}',
+            'Content-Type': 'application/json',
+            'User-Agent': Config.USER_AGENT
+        }
+
         response = requests.post(
             self.IGNIRA_BASE_URL,
-            headers=headers,
+            headers=actual_headers,
             json=payload,
             timeout=Config.REQUEST_TIMEOUT
         )
         response.raise_for_status()
         data = response.json()
 
-        return data.get('results', [])
+        print(f"[Info.gouv.fr]   Ignira API Response:")
+        print(f"[Info.gouv.fr]     Status: {response.status_code}")
+        print(f"[Info.gouv.fr]     Total Results: {data.get('totalResults', 0)}")
+        print(f"[Info.gouv.fr]     Returned: {len(data.get('results', []))} results")
 
-    def _extract_image_credit(self, url: str) -> Optional[str]:
+        # Show first 3 results for debugging
+        results = data.get('results', [])
+        for i, result in enumerate(results[:3], 1):
+            print(f"[Info.gouv.fr]       #{i}: {result.get('title', 'No title')[:60]}...")
+            print(f"[Info.gouv.fr]            URL: {result.get('url', 'No URL')}")
+
+        return results
+
+    def _extract_image_credit(self, url: str, idx: int = 0, total: int = 0) -> Optional[str]:
         """Extract image credit from a page using Crawl.ninja scraping.
 
         Args:
             url: URL of the page to scrape
+            idx: Current result index (for logging)
+            total: Total results (for logging)
 
         Returns:
             Image credit text or None if not found
         """
         try:
+            print(f"[Info.gouv.fr]   Scraping page with Crawl.ninja...")
+
             headers = {
                 'X-API-Key': self.crawl_ninja_api_key,
                 'Content-Type': 'application/json'
@@ -152,6 +202,9 @@ class InfoGouvSource(ImageSource):
             payload = {
                 'url': url
             }
+
+            print(f"[Info.gouv.fr]     Request: {self.CRAWL_NINJA_BASE_URL}")
+            print(f"[Info.gouv.fr]     Timeout: {Config.SCRAPING_TIMEOUT}s")
 
             response = requests.post(
                 self.CRAWL_NINJA_BASE_URL,
@@ -162,30 +215,53 @@ class InfoGouvSource(ImageSource):
             response.raise_for_status()
             data = response.json()
 
+            print(f"[Info.gouv.fr]     ✓ Scraping successful (status: {response.status_code})")
+
             if data.get('success') and data.get('data'):
                 markdown = data['data'].get('markdown', '')
 
+                print(f"[Info.gouv.fr]     Scraped content length: {len(markdown)} chars")
+                print(f"[Info.gouv.fr]     First 300 chars of markdown:")
+                print(f"[Info.gouv.fr]       {markdown[:300]}")
+
                 # Look for common credit patterns in French
                 credit_patterns = [
-                    r'(?i)crédit[:\s]*([^\n\.]+)',
-                    r'(?i)photo[:\s]*([^\n\.]+)',
-                    r'(?i)source[:\s]*([^\n\.]+)',
-                    r'(?i)©[:\s]*([^\n\.]+)',
-                    r'(?i)copyright[:\s]*([^\n\.]+)',
+                    ('crédit', r'(?i)crédit[:\s]*([^\n\.]+)'),
+                    ('photo', r'(?i)photo[:\s]*([^\n\.]+)'),
+                    ('source', r'(?i)source[:\s]*([^\n\.]+)'),
+                    ('©', r'(?i)©[:\s]*([^\n\.]+)'),
+                    ('copyright', r'(?i)copyright[:\s]*([^\n\.]+)'),
                 ]
 
-                for pattern in credit_patterns:
+                print(f"[Info.gouv.fr]     Attempting credit extraction with {len(credit_patterns)} patterns...")
+                for pattern_name, pattern in credit_patterns:
                     match = re.search(pattern, markdown)
                     if match:
-                        return match.group(1).strip()
+                        credit = match.group(1).strip()
+                        print(f"[Info.gouv.fr]     ✓ Credit found with pattern '{pattern_name}': {credit}")
+                        print(f"[Info.gouv.fr]     Checking for AFP...")
+                        is_afp = 'afp' in credit.lower()
+                        if is_afp:
+                            print(f"[Info.gouv.fr]     ⚠ AFP detected in credit!")
+                        else:
+                            print(f"[Info.gouv.fr]     ✓ No AFP detected")
+                        return credit
+                    else:
+                        print(f"[Info.gouv.fr]       Pattern '{pattern_name}' - no match")
+
+                print(f"[Info.gouv.fr]     ✗ No credit found with any pattern")
+            else:
+                print(f"[Info.gouv.fr]     ✗ Scraping failed or no data returned")
 
             return None
 
         except requests.exceptions.RequestException as e:
-            print(f"Error scraping page {url}: {e}")
+            print(f"[Info.gouv.fr]   ✗ Error scraping page: {e}")
             return None
         except Exception as e:
-            print(f"Unexpected error scraping {url}: {e}")
+            print(f"[Info.gouv.fr]   ✗ Unexpected error scraping: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def _is_afp_credit(self, credit: str) -> bool:
