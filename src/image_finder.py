@@ -22,8 +22,8 @@ class LicensedImageFinder:
             enable_cache: Enable SQLite caching to avoid repeating API requests
         """
         self.sources = []
-        self.face_detector = FaceDetector() if Config.ENABLE_FACE_DETECTION else None
         self.cache = ImageCache() if enable_cache else None
+        self.face_detector = FaceDetector(cache=self.cache) if Config.ENABLE_FACE_DETECTION else None
 
         # Initialize all image sources
         self._init_sources()
