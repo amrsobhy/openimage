@@ -5,11 +5,14 @@ from typing import List, Dict, Any, Optional
 from src.models import ImageResult
 from src.config import Config
 from src.face_detector import FaceDetector
+from src.gender_detector import GenderDetector
+from src.gender_classifier import GenderClassifier
 from src.cache import ImageCache
 from src.sources.wikimedia import WikimediaSource
 from src.sources.unsplash import UnsplashSource
 from src.sources.pexels import PexelsSource
 from src.sources.pixabay import PixabaySource
+from src.sources.infogouv import InfoGouvSource
 
 
 class LicensedImageFinder:
@@ -24,6 +27,8 @@ class LicensedImageFinder:
         self.sources = []
         self.cache = ImageCache() if enable_cache else None
         self.face_detector = FaceDetector(cache=self.cache) if Config.ENABLE_FACE_DETECTION else None
+        self.gender_detector = GenderDetector() if Config.ENABLE_GENDER_FILTERING else None
+        self.gender_classifier = GenderClassifier(cache=self.cache) if Config.ENABLE_GENDER_FILTERING else None
 
         # Initialize all image sources
         self._init_sources()
@@ -44,6 +49,10 @@ class LicensedImageFinder:
         # Pixabay (requires API key)
         if Config.PIXABAY_API_KEY:
             self.sources.append(PixabaySource(Config.PIXABAY_API_KEY))
+
+        # Info.gouv.fr (requires both Ignira and Crawl.ninja API keys)
+        if Config.IGNIRA_API_KEY and Config.CRAWL_NINJA_API_KEY:
+            self.sources.append(InfoGouvSource(Config.IGNIRA_API_KEY, Config.CRAWL_NINJA_API_KEY))
 
     def _search_source_with_cache(self, source, query: str, entity_type: str) -> List[ImageResult]:
         """Search a source with cache support.
@@ -118,9 +127,18 @@ class LicensedImageFinder:
                 except Exception as e:
                     print(f"Error searching {source.get_source_name()}: {e}")
 
+        # Filter by relevance: query must appear in title or description
+        print(f"\nFiltering {len(all_results)} results for relevance to '{query}'...")
+        all_results = self._filter_by_relevance(all_results, query)
+        print(f"After relevance filtering: {len(all_results)} results")
+
         # Apply face detection for person entities if enabled
         if entity_type.lower() == "person" and require_face and self.face_detector:
             all_results = self._filter_by_face_detection(all_results)
+
+        # Apply gender filtering for person entities if enabled
+        if entity_type.lower() == "person" and self.gender_detector and self.gender_classifier:
+            all_results = self._filter_by_gender(all_results, query)
 
         # Calculate quality scores
         all_results = self._calculate_quality_scores(all_results, entity_type)
@@ -169,6 +187,112 @@ class LicensedImageFinder:
 
         return filtered_results
 
+    def _filter_by_gender(self, results: List[ImageResult], query: str) -> List[ImageResult]:
+        """Filter results to only include images matching the expected gender.
+
+        Args:
+            results: List of ImageResult objects
+            query: Search query (person name)
+
+        Returns:
+            Filtered list of ImageResult objects matching expected gender
+        """
+        if not self.gender_detector or not self.gender_classifier:
+            return results
+
+        if not self.gender_detector.enabled or not self.gender_classifier.is_available():
+            return results
+
+        # Detect expected gender from query using LLM
+        expected_gender = self.gender_detector.detect_gender(query)
+
+        if not expected_gender:
+            print(f"\n⚠ Could not determine gender from query, skipping gender filtering")
+            return results
+
+        print(f"\nFiltering {len(results)} results for gender: {expected_gender}")
+
+        filtered_results = []
+        classification_errors = 0
+
+        for result in results:
+            try:
+                detected_gender = self.gender_classifier.classify_gender_from_url(
+                    result.thumbnail_url or result.image_url
+                )
+
+                if detected_gender == expected_gender:
+                    print(f"  ✓ Gender match ({detected_gender}): {result.title[:50]}")
+                    filtered_results.append(result)
+                elif detected_gender:
+                    print(f"  ✗ Gender mismatch (expected {expected_gender}, got {detected_gender}): {result.title[:50]}")
+                else:
+                    print(f"  ⚠ Could not detect gender: {result.title[:50]}")
+                    # Include images where gender detection fails to avoid being too restrictive
+                    filtered_results.append(result)
+
+            except Exception as e:
+                print(f"  ⚠ Gender classification failed for: {result.title[:50]} - {e}")
+                classification_errors += 1
+                # Include images where classification fails
+                filtered_results.append(result)
+
+        if classification_errors > 0:
+            print(f"\n⚠ Warning: Gender classification failed for {classification_errors} images (included in results)")
+
+        print(f"After gender filtering: {len(filtered_results)} results")
+        return filtered_results
+
+    def _filter_by_relevance(self, results: List[ImageResult], query: str) -> List[ImageResult]:
+        """Filter results to only include images relevant to the query.
+
+        Args:
+            results: List of ImageResult objects
+            query: Search query string
+
+        Returns:
+            Filtered list of ImageResult objects where query terms appear in title or description
+        """
+        filtered_results = []
+
+        # Split query into individual words and filter out very short/common words
+        query_words = query.lower().split()
+        # Remove very short words (articles, prepositions, etc.)
+        stop_words = {'a', 'an', 'the', 'le', 'la', 'les', 'de', 'du', 'des', 'et', 'ou', 'un', 'une'}
+        significant_words = [w for w in query_words if len(w) > 2 and w not in stop_words]
+
+        # If no significant words, fall back to full query matching
+        if not significant_words:
+            significant_words = query_words
+
+        for result in results:
+            title = (result.title or '').lower()
+            description = (result.description or '').lower()
+            combined_text = f"{title} {description}"
+
+            # Count how many significant words from query appear in title or description
+            matches = [word for word in significant_words if word in combined_text]
+
+            # Determine if result is relevant based on number of query words
+            is_relevant = False
+            if len(significant_words) == 1:
+                # Single word: must be present
+                is_relevant = len(matches) >= 1
+            elif len(significant_words) == 2:
+                # Two words: both must be present (e.g., "Le Monde" + "journal")
+                is_relevant = len(matches) >= 2
+            else:
+                # Three+ words: require at least 50% match
+                is_relevant = len(matches) >= (len(significant_words) * 0.5)
+
+            if is_relevant:
+                filtered_results.append(result)
+            else:
+                matched_words = ', '.join(matches) if matches else 'none'
+                print(f"  ✗ Irrelevant: '{result.title[:60] if result.title else 'No title'}' ({result.source}) - matched {len(matches)}/{len(significant_words)} words ({matched_words})")
+
+        return filtered_results
+
     def _calculate_quality_scores(
         self,
         results: List[ImageResult],
@@ -191,7 +315,8 @@ class LicensedImageFinder:
                 'Wikimedia Commons': 0.8,
                 'Unsplash': 0.9,
                 'Pexels': 0.85,
-                'Pixabay': 0.75
+                'Pixabay': 0.75,
+                'Info.gouv.fr': 0.95  # High quality government source
             }
             score += source_scores.get(result.source, 0.5)
 
@@ -219,6 +344,7 @@ class LicensedImageFinder:
             license_scores = {
                 'Public Domain': 1.0,
                 'CC0 (Creative Commons Zero)': 1.0,
+                'Etalab 2.0 Open License': 0.95,
                 'Unsplash License': 0.95,
                 'Pexels License': 0.95,
                 'Pixabay License': 0.95,

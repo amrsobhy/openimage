@@ -12,6 +12,7 @@ class LicenseType(Enum):
     CC_BY = "CC BY (Attribution)"
     CC_BY_SA = "CC BY-SA (Attribution-ShareAlike)"
     CC_BY_ND = "CC BY-ND (Attribution-NoDerivs)"
+    ETALAB_2_0 = "Etalab 2.0 Open License"
     UNSPLASH = "Unsplash License"
     PEXELS = "Pexels License"
     PIXABAY = "Pixabay License"
@@ -56,6 +57,7 @@ class ImageResult:
             LicenseType.CC0.value,
             LicenseType.CC_BY.value,
             LicenseType.CC_BY_SA.value,
+            LicenseType.ETALAB_2_0.value,
             LicenseType.UNSPLASH.value,
             LicenseType.PEXELS.value,
             LicenseType.PIXABAY.value,
