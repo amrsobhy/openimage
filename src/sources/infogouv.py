@@ -61,22 +61,41 @@ class InfoGouvSource(ImageSource):
 
         try:
             # Step 1: Search using Ignira API with site:info.gouv.fr filter
+            # Request more results (3x) since we'll filter out non-info.gouv.fr URLs
             search_query = f"{query} site:info.gouv.fr"
             print(f"[Info.gouv.fr] STEP 1: Searching with Ignira API")
             print(f"[Info.gouv.fr]   Query: '{search_query}'")
-            search_results = self._search_images(search_query, max_results)
+            search_limit = max_results * 3  # Request 3x to account for filtering
+            search_results = self._search_images(search_query, search_limit)
             print(f"[Info.gouv.fr]   ✓ Found {len(search_results)} image results from search API")
+
+            # Step 1.5: Filter to ONLY info.gouv.fr URLs (search API returns garbage)
+            print(f"\n[Info.gouv.fr] STEP 1.5: Filtering to ONLY info.gouv.fr URLs")
+            filtered_results = []
+            for result in search_results:
+                url = result.get('url', '')
+                if 'info.gouv.fr' in url.lower():
+                    filtered_results.append(result)
+                    print(f"[Info.gouv.fr]   ✓ KEPT: {url}")
+                else:
+                    print(f"[Info.gouv.fr]   ✗ REJECTED (not info.gouv.fr): {url}")
+
+            print(f"[Info.gouv.fr]   Filtered: {len(search_results)} → {len(filtered_results)} results")
+
+            if len(filtered_results) == 0:
+                print(f"[Info.gouv.fr]   ✗ No info.gouv.fr URLs found in search results!")
+                return []
 
             # Step 2: For each result, scrape the page and check credits
             print(f"\n[Info.gouv.fr] STEP 2: Processing each result (scraping + filtering)")
-            for idx, search_result in enumerate(search_results, 1):
-                print(f"\n[Info.gouv.fr] --- Result {idx}/{len(search_results)} ---")
+            for idx, search_result in enumerate(filtered_results, 1):
+                print(f"\n[Info.gouv.fr] --- Result {idx}/{len(filtered_results)} ---")
                 print(f"[Info.gouv.fr]   Title: {search_result.get('title', 'No title')}")
                 print(f"[Info.gouv.fr]   URL: {search_result['url']}")
                 print(f"[Info.gouv.fr]   Thumbnail: {search_result.get('thumbnail', 'None')[:80]}...")
 
                 # Extract image credit from the page
-                credit = self._extract_image_credit(search_result['url'], idx, len(search_results))
+                credit = self._extract_image_credit(search_result['url'], idx, len(filtered_results))
 
                 # Step 3: Filter out AFP-credited images
                 if credit and self._is_afp_credit(credit):
