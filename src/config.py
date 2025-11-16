@@ -22,6 +22,12 @@ class Config:
     # Crawl.ninja Scraping API
     CRAWL_NINJA_API_KEY: Optional[str] = os.getenv('CRAWL_NINJA_API_KEY')
 
+    # Zeus LLM API for gender detection
+    ZEUS_LLM_API_KEY: Optional[str] = os.getenv('ZEUS_LLM_API_KEY')
+    ZEUS_LLM_ENDPOINT: str = "https://api.zeusllm.com/v1/ai"
+    ZEUS_LLM_PIPELINE_ID: str = "pipe_1752648182552_ac1qsbb18"
+    ZEUS_LLM_TEMPERATURE: float = 0.7
+
     # Request settings
     REQUEST_TIMEOUT: int = 30  # seconds - for standard API calls
     SCRAPING_TIMEOUT: int = 60  # seconds - for web scraping operations
@@ -31,6 +37,9 @@ class Config:
     # Face detection settings for person entities
     ENABLE_FACE_DETECTION: bool = True
     MIN_FACE_CONFIDENCE: float = 0.5
+
+    # Gender filtering settings for person entities
+    ENABLE_GENDER_FILTERING: bool = True
 
     # Image quality settings
     MIN_IMAGE_WIDTH: int = 800

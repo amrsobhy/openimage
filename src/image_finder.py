@@ -5,6 +5,8 @@ from typing import List, Dict, Any, Optional
 from src.models import ImageResult
 from src.config import Config
 from src.face_detector import FaceDetector
+from src.gender_detector import GenderDetector
+from src.gender_classifier import GenderClassifier
 from src.cache import ImageCache
 from src.sources.wikimedia import WikimediaSource
 from src.sources.unsplash import UnsplashSource
@@ -25,6 +27,8 @@ class LicensedImageFinder:
         self.sources = []
         self.cache = ImageCache() if enable_cache else None
         self.face_detector = FaceDetector(cache=self.cache) if Config.ENABLE_FACE_DETECTION else None
+        self.gender_detector = GenderDetector() if Config.ENABLE_GENDER_FILTERING else None
+        self.gender_classifier = GenderClassifier(cache=self.cache) if Config.ENABLE_GENDER_FILTERING else None
 
         # Initialize all image sources
         self._init_sources()
@@ -132,6 +136,10 @@ class LicensedImageFinder:
         if entity_type.lower() == "person" and require_face and self.face_detector:
             all_results = self._filter_by_face_detection(all_results)
 
+        # Apply gender filtering for person entities if enabled
+        if entity_type.lower() == "person" and self.gender_detector and self.gender_classifier:
+            all_results = self._filter_by_gender(all_results, query)
+
         # Calculate quality scores
         all_results = self._calculate_quality_scores(all_results, entity_type)
 
@@ -177,6 +185,62 @@ class LicensedImageFinder:
         if detection_errors > 0:
             print(f"\n⚠ Warning: Face detection failed for {detection_errors} images (excluded from results)")
 
+        return filtered_results
+
+    def _filter_by_gender(self, results: List[ImageResult], query: str) -> List[ImageResult]:
+        """Filter results to only include images matching the expected gender.
+
+        Args:
+            results: List of ImageResult objects
+            query: Search query (person name)
+
+        Returns:
+            Filtered list of ImageResult objects matching expected gender
+        """
+        if not self.gender_detector or not self.gender_classifier:
+            return results
+
+        if not self.gender_detector.enabled or not self.gender_classifier.is_available():
+            return results
+
+        # Detect expected gender from query using LLM
+        expected_gender = self.gender_detector.detect_gender(query)
+
+        if not expected_gender:
+            print(f"\n⚠ Could not determine gender from query, skipping gender filtering")
+            return results
+
+        print(f"\nFiltering {len(results)} results for gender: {expected_gender}")
+
+        filtered_results = []
+        classification_errors = 0
+
+        for result in results:
+            try:
+                detected_gender = self.gender_classifier.classify_gender_from_url(
+                    result.thumbnail_url or result.image_url
+                )
+
+                if detected_gender == expected_gender:
+                    print(f"  ✓ Gender match ({detected_gender}): {result.title[:50]}")
+                    filtered_results.append(result)
+                elif detected_gender:
+                    print(f"  ✗ Gender mismatch (expected {expected_gender}, got {detected_gender}): {result.title[:50]}")
+                else:
+                    print(f"  ⚠ Could not detect gender: {result.title[:50]}")
+                    # Include images where gender detection fails to avoid being too restrictive
+                    filtered_results.append(result)
+
+            except Exception as e:
+                print(f"  ⚠ Gender classification failed for: {result.title[:50]} - {e}")
+                classification_errors += 1
+                # Include images where classification fails
+                filtered_results.append(result)
+
+        if classification_errors > 0:
+            print(f"\n⚠ Warning: Gender classification failed for {classification_errors} images (included in results)")
+
+        print(f"After gender filtering: {len(filtered_results)} results")
         return filtered_results
 
     def _filter_by_relevance(self, results: List[ImageResult], query: str) -> List[ImageResult]:

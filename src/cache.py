@@ -58,6 +58,16 @@ class ImageCache:
             )
         ''')
 
+        # Create gender classification cache table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS gender_classification_cache (
+                image_url TEXT PRIMARY KEY,
+                gender TEXT NOT NULL,
+                classified_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            )
+        ''')
+
         # Create index for faster lookups
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_query_entity
@@ -72,6 +82,11 @@ class ImageCache:
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_face_expires
             ON face_detection_cache(expires_at)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_gender_expires
+            ON gender_classification_cache(expires_at)
         ''')
 
         conn.commit()
@@ -180,10 +195,13 @@ class ImageCache:
         cursor.execute('DELETE FROM face_detection_cache WHERE expires_at <= ?', (current_time,))
         face_deleted_count = cursor.rowcount
 
+        cursor.execute('DELETE FROM gender_classification_cache WHERE expires_at <= ?', (current_time,))
+        gender_deleted_count = cursor.rowcount
+
         conn.commit()
         conn.close()
 
-        return image_deleted_count + face_deleted_count
+        return image_deleted_count + face_deleted_count + gender_deleted_count
 
     def clear_all(self) -> int:
         """Clear all cache entries.
@@ -200,10 +218,13 @@ class ImageCache:
         cursor.execute('DELETE FROM face_detection_cache')
         face_deleted_count = cursor.rowcount
 
+        cursor.execute('DELETE FROM gender_classification_cache')
+        gender_deleted_count = cursor.rowcount
+
         conn.commit()
         conn.close()
 
-        return image_deleted_count + face_deleted_count
+        return image_deleted_count + face_deleted_count + gender_deleted_count
 
     def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics.
@@ -362,6 +383,55 @@ class ImageCache:
             (image_url, has_face, face_count, detected_at, expires_at)
             VALUES (?, ?, ?, ?, ?)
         ''', (image_url, int(has_face), face_count, current_time, expires_at))
+
+        conn.commit()
+        conn.close()
+
+    def get_gender_classification(self, image_url: str) -> Optional[str]:
+        """Get cached gender classification result for an image URL.
+
+        Args:
+            image_url: URL of the image
+
+        Returns:
+            'male', 'female', or None if not cached/expired
+        """
+        current_time = int(time.time())
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT gender FROM gender_classification_cache
+            WHERE image_url = ? AND expires_at > ?
+        ''', (image_url, current_time))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return row[0]
+
+        return None
+
+    def set_gender_classification(self, image_url: str, gender: str):
+        """Cache gender classification result for an image URL.
+
+        Args:
+            image_url: URL of the image
+            gender: Detected gender ('male' or 'female')
+        """
+        current_time = int(time.time())
+        expires_at = current_time + (self.ttl_days * 24 * 60 * 60)
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT OR REPLACE INTO gender_classification_cache
+            (image_url, gender, classified_at, expires_at)
+            VALUES (?, ?, ?, ?)
+        ''', (image_url, gender, current_time, expires_at))
 
         conn.commit()
         conn.close()
