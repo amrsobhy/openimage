@@ -270,13 +270,26 @@ class LicensedImageFinder:
             description = (result.description or '').lower()
             combined_text = f"{title} {description}"
 
-            # Check if ANY significant word from query appears in title or description
+            # Count how many significant words from query appear in title or description
             matches = [word for word in significant_words if word in combined_text]
 
-            if matches:
+            # Determine if result is relevant based on number of query words
+            is_relevant = False
+            if len(significant_words) == 1:
+                # Single word: must be present
+                is_relevant = len(matches) >= 1
+            elif len(significant_words) == 2:
+                # Two words: both must be present (e.g., "Le Monde" + "journal")
+                is_relevant = len(matches) >= 2
+            else:
+                # Three+ words: require at least 50% match
+                is_relevant = len(matches) >= (len(significant_words) * 0.5)
+
+            if is_relevant:
                 filtered_results.append(result)
             else:
-                print(f"  ✗ Irrelevant: '{result.title[:60] if result.title else 'No title'}' ({result.source})")
+                matched_words = ', '.join(matches) if matches else 'none'
+                print(f"  ✗ Irrelevant: '{result.title[:60] if result.title else 'No title'}' ({result.source}) - matched {len(matches)}/{len(significant_words)} words ({matched_words})")
 
         return filtered_results
 
