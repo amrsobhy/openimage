@@ -157,7 +157,7 @@ class InfoGouvSource(ImageSource):
                 self.CRAWL_NINJA_BASE_URL,
                 headers=headers,
                 json=payload,
-                timeout=Config.REQUEST_TIMEOUT * 2  # Allow more time for scraping
+                timeout=Config.SCRAPING_TIMEOUT  # Use dedicated scraping timeout
             )
             response.raise_for_status()
             data = response.json()

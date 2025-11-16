@@ -23,7 +23,8 @@ class Config:
     CRAWL_NINJA_API_KEY: Optional[str] = os.getenv('CRAWL_NINJA_API_KEY')
 
     # Request settings
-    REQUEST_TIMEOUT: int = 10  # seconds
+    REQUEST_TIMEOUT: int = 30  # seconds - for standard API calls
+    SCRAPING_TIMEOUT: int = 60  # seconds - for web scraping operations
     MAX_RESULTS_PER_SOURCE: int = 10
     USER_AGENT: str = "LicensedImageFinder/1.0 (https://github.com/openimage; educational/research)"
 
