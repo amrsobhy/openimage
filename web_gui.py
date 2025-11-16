@@ -11,7 +11,18 @@ from src.image_finder import LicensedImageFinder
 from src.config import Config
 
 app = Flask(__name__)
-finder = LicensedImageFinder()
+
+# Lazy initialization - create finder on first request to avoid hanging during startup
+finder = None
+
+def get_finder():
+    """Get or create the LicensedImageFinder instance."""
+    global finder
+    if finder is None:
+        print("Initializing LicensedImageFinder (this may download ML models on first run)...")
+        finder = LicensedImageFinder()
+        print("✓ LicensedImageFinder initialized")
+    return finder
 
 
 class StreamCapture:
@@ -46,7 +57,7 @@ class StreamCapture:
 @app.route('/')
 def index():
     """Render the main search page."""
-    status = finder.get_status()
+    status = get_finder().get_status()
     return render_template('index.html', status=status)
 
 
@@ -63,7 +74,7 @@ def search():
         return jsonify({'error': 'Query is required'}), 400
 
     # Perform the search
-    results = finder.find_images(
+    results = get_finder().find_images(
         query=query,
         entity_type=entity_type,
         max_results=max_results,
@@ -104,7 +115,7 @@ def search_stream():
         def run_search():
             """Run the search in a background thread."""
             try:
-                results = finder.find_images(
+                results = get_finder().find_images(
                     query=query,
                     entity_type=entity_type,
                     max_results=max_results,
@@ -166,12 +177,17 @@ def search_stream():
 @app.route('/status')
 def status():
     """Get the current status of the image finder."""
-    return jsonify(finder.get_status())
+    return jsonify(get_finder().get_status())
 
 
 if __name__ == '__main__':
     print("Starting Licensed Image Finder Web GUI...")
-    print("Open your browser and navigate to: http://localhost:5000")
-    print("\nAvailable sources:", ', '.join(finder.get_available_sources()))
+    print("Initializing image finder (this may take a moment on first run)...")
+
+    # Initialize finder eagerly when running directly
+    image_finder = get_finder()
+
+    print("\nOpen your browser and navigate to: http://localhost:5000")
+    print("\nAvailable sources:", ', '.join(image_finder.get_available_sources()))
     print("\nPress Ctrl+C to stop the server")
     app.run(debug=True, host='0.0.0.0', port=5000)
