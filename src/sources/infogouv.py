@@ -87,12 +87,26 @@ class InfoGouvSource(ImageSource):
                 return []
 
             # Step 2: For each result, scrape the page and check credits
-            print(f"\n[Info.gouv.fr] STEP 2: Processing each result (scraping + filtering)")
+            print(f"\n[Info.gouv.fr] STEP 2: Processing each result (relevance + credit filtering)")
             for idx, search_result in enumerate(filtered_results, 1):
                 print(f"\n[Info.gouv.fr] --- Result {idx}/{len(filtered_results)} ---")
                 print(f"[Info.gouv.fr]   Title: {search_result.get('title', 'No title')}")
                 print(f"[Info.gouv.fr]   URL: {search_result['url']}")
                 print(f"[Info.gouv.fr]   Thumbnail: {search_result.get('thumbnail', 'None')[:80]}...")
+
+                # Check relevance: query must appear in title or description
+                title = search_result.get('title', '')
+                description = search_result.get('content', '')
+                is_relevant = (
+                    query.lower() in title.lower() or
+                    query.lower() in description.lower()
+                )
+
+                if not is_relevant:
+                    print(f"[Info.gouv.fr]   ✗ SKIPPED: Query '{query}' not in title or description (irrelevant)")
+                    continue
+
+                print(f"[Info.gouv.fr]   ✓ Relevant: Query found in {'title' if query.lower() in title.lower() else 'description'}")
 
                 # Extract image credit from the page
                 credit = self._extract_image_credit(search_result['url'], idx, len(filtered_results))
