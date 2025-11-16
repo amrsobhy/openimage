@@ -47,6 +47,17 @@ class ImageCache:
             )
         ''')
 
+        # Create face detection cache table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS face_detection_cache (
+                image_url TEXT PRIMARY KEY,
+                has_face INTEGER NOT NULL,
+                face_count INTEGER NOT NULL,
+                detected_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            )
+        ''')
+
         # Create index for faster lookups
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_query_entity
@@ -56,6 +67,11 @@ class ImageCache:
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_expires
             ON image_cache(expires_at)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_face_expires
+            ON face_detection_cache(expires_at)
         ''')
 
         conn.commit()
@@ -159,12 +175,15 @@ class ImageCache:
         cursor = conn.cursor()
 
         cursor.execute('DELETE FROM image_cache WHERE expires_at <= ?', (current_time,))
-        deleted_count = cursor.rowcount
+        image_deleted_count = cursor.rowcount
+
+        cursor.execute('DELETE FROM face_detection_cache WHERE expires_at <= ?', (current_time,))
+        face_deleted_count = cursor.rowcount
 
         conn.commit()
         conn.close()
 
-        return deleted_count
+        return image_deleted_count + face_deleted_count
 
     def clear_all(self) -> int:
         """Clear all cache entries.
@@ -176,12 +195,15 @@ class ImageCache:
         cursor = conn.cursor()
 
         cursor.execute('DELETE FROM image_cache')
-        deleted_count = cursor.rowcount
+        image_deleted_count = cursor.rowcount
+
+        cursor.execute('DELETE FROM face_detection_cache')
+        face_deleted_count = cursor.rowcount
 
         conn.commit()
         conn.close()
 
-        return deleted_count
+        return image_deleted_count + face_deleted_count
 
     def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics.
@@ -227,6 +249,13 @@ class ImageCache:
             for row in cursor.fetchall()
         ]
 
+        # Face detection cache stats
+        cursor.execute('SELECT COUNT(*) FROM face_detection_cache WHERE expires_at > ?', (current_time,))
+        face_cache_entries = cursor.fetchone()[0]
+
+        cursor.execute('SELECT COUNT(*) FROM face_detection_cache WHERE has_face = 1 AND expires_at > ?', (current_time,))
+        faces_detected_count = cursor.fetchone()[0]
+
         # Database size
         cursor.execute("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()")
         db_size_bytes = cursor.fetchone()[0]
@@ -240,6 +269,11 @@ class ImageCache:
             'total_hits': total_hits,
             'cache_hit_rate': f"{(total_hits / max(active_entries, 1)):.2f}",
             'popular_queries': popular_queries,
+            'face_detection_cache': {
+                'total_images': face_cache_entries,
+                'images_with_faces': faces_detected_count,
+                'images_without_faces': face_cache_entries - faces_detected_count
+            },
             'db_size_mb': round(db_size_bytes / (1024 * 1024), 2),
             'ttl_days': self.ttl_days
         }
@@ -279,3 +313,55 @@ class ImageCache:
 
         conn.close()
         return entries
+
+    def get_face_detection(self, image_url: str) -> Optional[tuple[bool, int]]:
+        """Get cached face detection result for an image URL.
+
+        Args:
+            image_url: URL of the image
+
+        Returns:
+            Tuple of (has_face, face_count) or None if not cached/expired
+        """
+        current_time = int(time.time())
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT has_face, face_count FROM face_detection_cache
+            WHERE image_url = ? AND expires_at > ?
+        ''', (image_url, current_time))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            has_face = bool(row[0])
+            face_count = row[1]
+            return has_face, face_count
+
+        return None
+
+    def set_face_detection(self, image_url: str, has_face: bool, face_count: int):
+        """Cache face detection result for an image URL.
+
+        Args:
+            image_url: URL of the image
+            has_face: Whether a face was detected
+            face_count: Number of faces detected
+        """
+        current_time = int(time.time())
+        expires_at = current_time + (self.ttl_days * 24 * 60 * 60)
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT OR REPLACE INTO face_detection_cache
+            (image_url, has_face, face_count, detected_at, expires_at)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (image_url, int(has_face), face_count, current_time, expires_at))
+
+        conn.commit()
+        conn.close()

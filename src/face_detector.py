@@ -5,8 +5,11 @@ import numpy as np
 import requests
 from io import BytesIO
 from PIL import Image
-from typing import Optional, Tuple
+from typing import Optional, Tuple, TYPE_CHECKING
 from src.config import Config
+
+if TYPE_CHECKING:
+    from src.cache import ImageCache
 
 
 class FaceDetector:
@@ -20,9 +23,14 @@ class FaceDetector:
     # Using "hog" for speed since we process many images
     DETECTION_MODEL = "hog"
 
-    def __init__(self):
-        """Initialize the face detector with face_recognition library."""
+    def __init__(self, cache: Optional['ImageCache'] = None):
+        """Initialize the face detector with face_recognition library.
+
+        Args:
+            cache: Optional ImageCache instance for caching face detection results
+        """
         self.is_initialized = True
+        self.cache = cache
         print("✓ Face detection initialized (using face_recognition library)")
 
     def detect_faces_from_url(self, image_url: str) -> Tuple[bool, int]:
@@ -39,6 +47,12 @@ class FaceDetector:
         """
         if not self.is_initialized:
             return False, 0
+
+        # Check cache first
+        if self.cache:
+            cached_result = self.cache.get_face_detection(image_url)
+            if cached_result is not None:
+                return cached_result
 
         try:
             # Download the image
@@ -87,6 +101,10 @@ class FaceDetector:
                     valid_face_count += 1
 
             has_face = valid_face_count > 0
+
+            # Cache the result
+            if self.cache:
+                self.cache.set_face_detection(image_url, has_face, valid_face_count)
 
             return has_face, valid_face_count
 
