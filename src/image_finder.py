@@ -144,6 +144,7 @@ class LicensedImageFinder:
             return results
 
         filtered_results = []
+        detection_errors = 0
 
         for result in results:
             try:
@@ -153,11 +154,18 @@ class LicensedImageFinder:
                 result.has_face = has_face
 
                 if has_face:
+                    print(f"  ✓ Face detected in: {result.title[:50]}")
                     filtered_results.append(result)
+                else:
+                    print(f"  ✗ No face detected in: {result.title[:50]}")
             except Exception as e:
-                print(f"Error in face detection for {result.image_url}: {e}")
-                # Include the image if face detection fails
-                filtered_results.append(result)
+                print(f"  ⚠ Face detection failed for: {result.title[:50]} - {e}")
+                detection_errors += 1
+                # DO NOT include images where face detection fails
+                # This ensures we only return images with confirmed faces
+
+        if detection_errors > 0:
+            print(f"\n⚠ Warning: Face detection failed for {detection_errors} images (excluded from results)")
 
         return filtered_results
 
