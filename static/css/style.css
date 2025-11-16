@@ -169,6 +169,31 @@ h1 {
     100% { transform: rotate(360deg); }
 }
 
+/* Progress Log */
+.progress-log {
+    margin-top: 30px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 20px;
+    max-height: 400px;
+    overflow-y: auto;
+    text-align: left;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85em;
+    line-height: 1.6;
+}
+
+.log-entry {
+    padding: 4px 0;
+    color: #333;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.log-entry:hover {
+    background: #e9ecef;
+}
+
 /* Results */
 .results-container {
     margin-top: 30px;

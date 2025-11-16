@@ -77,6 +77,7 @@
         <div id="loading" class="loading" style="display: none;">
             <div class="spinner"></div>
             <p>Searching for images...</p>
+            <div id="progressLog" class="progress-log"></div>
         </div>
 
         <div id="results" class="results-container" style="display: none;">
@@ -104,6 +105,7 @@
         const filterInfo = document.getElementById('filterInfo');
         const entityTypeSelect = document.getElementById('entity_type');
         const requireFaceCheckbox = document.getElementById('require_face');
+        const progressLog = document.getElementById('progressLog');
 
         // Update face detection checkbox visibility based on entity type
         entityTypeSelect.addEventListener('change', function() {
@@ -128,9 +130,12 @@
             resultsDiv.style.display = 'none';
             errorDiv.style.display = 'none';
             imageGrid.innerHTML = '';
+            progressLog.innerHTML = '';
 
+            // Use Server-Sent Events for real-time progress
             try {
-                const response = await fetch('/search', {
+                // First, send the search parameters via POST
+                const response = await fetch('/search-stream', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -147,15 +152,50 @@
                     throw new Error('Search failed');
                 }
 
-                const data = await response.json();
-                displayResults(data);
+                // Read the stream
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();  // Keep incomplete line in buffer
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = JSON.parse(line.substring(6));
+
+                            if (data.type === 'progress') {
+                                addProgressMessage(data.message);
+                            } else if (data.type === 'complete') {
+                                loadingDiv.style.display = 'none';
+                                displayResults(data.results);
+                            } else if (data.type === 'error') {
+                                loadingDiv.style.display = 'none';
+                                showError(data.message);
+                            }
+                        }
+                    }
+                }
             } catch (error) {
+                loadingDiv.style.display = 'none';
                 showError('An error occurred while searching. Please try again.');
                 console.error('Search error:', error);
-            } finally {
-                loadingDiv.style.display = 'none';
             }
         });
+
+        function addProgressMessage(message) {
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.textContent = message;
+            progressLog.appendChild(logEntry);
+            // Auto-scroll to bottom
+            progressLog.scrollTop = progressLog.scrollHeight;
+        }
 
         function displayResults(data) {
             resultsTitle.textContent = `Results for "${data.query}"`;
