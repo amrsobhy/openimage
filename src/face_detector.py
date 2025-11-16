@@ -1,6 +1,6 @@
 """Face detection module for verifying person images."""
 
-import cv2
+import mediapipe as mp
 import numpy as np
 import requests
 from io import BytesIO
@@ -12,20 +12,32 @@ from src.config import Config
 class FaceDetector:
     """Detect faces in images to verify relevance for person entities."""
 
+    # Minimum confidence threshold for face detection (0.0 to 1.0)
+    # Higher values = fewer false positives but might miss some real faces
+    MIN_DETECTION_CONFIDENCE = 0.7
+
+    # Minimum size for a face relative to image dimensions
+    # This helps filter out tiny detections that are likely false positives
+    MIN_FACE_SIZE_RATIO = 0.05  # Face must be at least 5% of image width/height
+
     def __init__(self):
-        """Initialize the face detector with OpenCV's Haar Cascade."""
-        # Use OpenCV's pre-trained Haar Cascade classifier
-        self.face_cascade = None
+        """Initialize the face detector with MediaPipe's Face Detection."""
+        self.face_detection = None
         try:
-            # Try to load the Haar Cascade classifier for face detection
-            self.face_cascade = cv2.CascadeClassifier(
-                cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            # Initialize MediaPipe Face Detection
+            # model_selection: 0 for faces within 2 meters, 1 for faces within 5 meters
+            # min_detection_confidence: minimum confidence threshold
+            mp_face_detection = mp.solutions.face_detection
+            self.face_detection = mp_face_detection.FaceDetection(
+                model_selection=1,  # Use model for faces within 5 meters (better for photos)
+                min_detection_confidence=self.MIN_DETECTION_CONFIDENCE
             )
+            print("✓ MediaPipe Face Detection initialized successfully")
         except Exception as e:
-            print(f"Warning: Could not load face detector: {e}")
+            print(f"Warning: Could not load MediaPipe face detector: {e}")
 
     def detect_faces_from_url(self, image_url: str) -> Tuple[bool, int]:
-        """Detect faces in an image from a URL.
+        """Detect faces in an image from a URL using MediaPipe.
 
         Args:
             image_url: URL of the image to analyze
@@ -33,7 +45,7 @@ class FaceDetector:
         Returns:
             Tuple of (has_face: bool, face_count: int)
         """
-        if not self.face_cascade:
+        if not self.face_detection:
             return False, 0
 
         try:
@@ -52,31 +64,44 @@ class FaceDetector:
             # Convert to PIL Image
             img = Image.open(BytesIO(response.content))
 
-            # Convert to RGB if needed
+            # Convert to RGB if needed (MediaPipe requires RGB)
             if img.mode != 'RGB':
                 img = img.convert('RGB')
 
-            # Convert to numpy array for OpenCV
+            # Convert to numpy array
             img_array = np.array(img)
 
-            # Convert RGB to BGR (OpenCV uses BGR)
-            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+            # Get image dimensions
+            img_height, img_width = img_array.shape[:2]
 
-            # Convert to grayscale for face detection
-            gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+            # Process the image with MediaPipe
+            results = self.face_detection.process(img_array)
 
-            # Detect faces
-            faces = self.face_cascade.detectMultiScale(
-                gray,
-                scaleFactor=1.1,
-                minNeighbors=5,
-                minSize=(30, 30)
-            )
+            # Count valid faces (filter by size to reduce false positives)
+            valid_face_count = 0
 
-            face_count = len(faces)
-            has_face = face_count > 0
+            if results.detections:
+                for detection in results.detections:
+                    # Get bounding box
+                    bbox = detection.location_data.relative_bounding_box
 
-            return has_face, face_count
+                    # Calculate face size in pixels
+                    face_width = bbox.width * img_width
+                    face_height = bbox.height * img_height
+
+                    # Check if face is large enough (filters out tiny false positives)
+                    min_dimension = min(img_width, img_height) * self.MIN_FACE_SIZE_RATIO
+                    if face_width >= min_dimension and face_height >= min_dimension:
+                        # Get detection confidence score
+                        confidence = detection.score[0] if detection.score else 0
+
+                        # Only count if confidence is above threshold
+                        if confidence >= self.MIN_DETECTION_CONFIDENCE:
+                            valid_face_count += 1
+
+            has_face = valid_face_count > 0
+
+            return has_face, valid_face_count
 
         except requests.exceptions.RequestException as e:
             print(f"Error downloading image for face detection: {e}")
@@ -87,4 +112,9 @@ class FaceDetector:
 
     def is_available(self) -> bool:
         """Check if face detection is available."""
-        return self.face_cascade is not None
+        return self.face_detection is not None
+
+    def __del__(self):
+        """Cleanup MediaPipe resources."""
+        if self.face_detection:
+            self.face_detection.close()
