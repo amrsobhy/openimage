@@ -108,6 +108,15 @@ class InfoGouvSource(ImageSource):
 
                 print(f"[Info.gouv.fr]   ✓ Relevant: Query found in {'title' if query.lower() in title.lower() else 'description'}")
 
+                # Filter out personality/profile thumbnails from "associated personalities" sections
+                thumbnail_url = search_result.get('thumbnail', '')
+                if '/personality/' in thumbnail_url.lower():
+                    print(f"[Info.gouv.fr]   ✗ SKIPPED: Thumbnail is a personality photo (not article image)")
+                    print(f"[Info.gouv.fr]     These appear in 'Personnalité(s) associée(s)' footer sections")
+                    continue
+
+                print(f"[Info.gouv.fr]   ✓ Thumbnail validated: Not a sidebar/footer personality photo")
+
                 # Extract image credit from the page
                 credit = self._extract_image_credit(search_result['url'], idx, len(filtered_results))
 
