@@ -123,6 +123,11 @@ class LicensedImageFinder:
                 except Exception as e:
                     print(f"Error searching {source.get_source_name()}: {e}")
 
+        # Filter by relevance: query must appear in title or description
+        print(f"\nFiltering {len(all_results)} results for relevance to '{query}'...")
+        all_results = self._filter_by_relevance(all_results, query)
+        print(f"After relevance filtering: {len(all_results)} results")
+
         # Apply face detection for person entities if enabled
         if entity_type.lower() == "person" and require_face and self.face_detector:
             all_results = self._filter_by_face_detection(all_results)
@@ -171,6 +176,31 @@ class LicensedImageFinder:
 
         if detection_errors > 0:
             print(f"\n⚠ Warning: Face detection failed for {detection_errors} images (excluded from results)")
+
+        return filtered_results
+
+    def _filter_by_relevance(self, results: List[ImageResult], query: str) -> List[ImageResult]:
+        """Filter results to only include images relevant to the query.
+
+        Args:
+            results: List of ImageResult objects
+            query: Search query string
+
+        Returns:
+            Filtered list of ImageResult objects where query appears in title or description
+        """
+        filtered_results = []
+        query_lower = query.lower()
+
+        for result in results:
+            title = result.title or ''
+            description = result.description or ''
+
+            # Check if query appears in title or description
+            if query_lower in title.lower() or query_lower in description.lower():
+                filtered_results.append(result)
+            else:
+                print(f"  ✗ Irrelevant: '{result.title[:60] if result.title else 'No title'}' ({result.source})")
 
         return filtered_results
 
