@@ -251,17 +251,29 @@ class LicensedImageFinder:
             query: Search query string
 
         Returns:
-            Filtered list of ImageResult objects where query appears in title or description
+            Filtered list of ImageResult objects where query terms appear in title or description
         """
         filtered_results = []
-        query_lower = query.lower()
+
+        # Split query into individual words and filter out very short/common words
+        query_words = query.lower().split()
+        # Remove very short words (articles, prepositions, etc.)
+        stop_words = {'a', 'an', 'the', 'le', 'la', 'les', 'de', 'du', 'des', 'et', 'ou', 'un', 'une'}
+        significant_words = [w for w in query_words if len(w) > 2 and w not in stop_words]
+
+        # If no significant words, fall back to full query matching
+        if not significant_words:
+            significant_words = query_words
 
         for result in results:
-            title = result.title or ''
-            description = result.description or ''
+            title = (result.title or '').lower()
+            description = (result.description or '').lower()
+            combined_text = f"{title} {description}"
 
-            # Check if query appears in title or description
-            if query_lower in title.lower() or query_lower in description.lower():
+            # Check if ANY significant word from query appears in title or description
+            matches = [word for word in significant_words if word in combined_text]
+
+            if matches:
                 filtered_results.append(result)
             else:
                 print(f"  ✗ Irrelevant: '{result.title[:60] if result.title else 'No title'}' ({result.source})")
