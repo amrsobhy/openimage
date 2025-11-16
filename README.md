@@ -15,6 +15,7 @@ OpenImage is a Python-based image finder that automatically retrieves legally-sa
 - **Comprehensive Metadata**: Returns URLs, licenses, authors, descriptions, and more
 - **Parallel Searching**: Queries multiple sources concurrently for faster results
 - **Flexible CLI**: Easy-to-use command-line interface with multiple options
+- **Web GUI**: Modern web interface with live image thumbnails and visual search
 
 ## Installation
 
@@ -47,7 +48,31 @@ Add these to your `.env` file.
 
 ## Usage
 
-### Basic Usage
+### Web GUI (Recommended for Testing)
+
+The easiest way to search and visualize results is using the web interface:
+
+```bash
+python3 web_gui.py
+```
+
+Then open your browser to: **http://localhost:5000**
+
+**Features:**
+- 🔍 Live search with instant results
+- 🖼️ Visual thumbnail grid sorted by quality score
+- 📊 See all metadata (license, author, dimensions, score)
+- 👤 Toggle face detection on/off
+- 📥 Direct download and view links
+- 📱 Responsive design (works on mobile)
+
+![Web GUI Screenshot](https://via.placeholder.com/800x400.png?text=OpenImage+Web+GUI)
+
+### Command-Line Interface
+
+For programmatic use or automation, use the CLI:
+
+#### Basic Usage
 
 Search for a person with face detection:
 ```bash
@@ -216,7 +241,13 @@ openimage/
 │   ├── test_sources.py
 │   ├── test_image_finder.py
 │   └── test_face_detector.py
+├── templates/
+│   └── index.html             # Web GUI template
+├── static/
+│   └── css/
+│       └── style.css          # Web GUI styles
 ├── main.py                    # CLI entry point
+├── web_gui.py                 # Web GUI entry point
 ├── requirements.txt
 ├── .env.example
 └── README.md

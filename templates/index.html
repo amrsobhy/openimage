@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenImage - Licensed Image Finder</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🖼️ OpenImage - Licensed Image Finder</h1>
+            <p class="subtitle">Find high-quality, license-safe images for commercial use</p>
+            <div class="status-bar">
+                <strong>Available Sources:</strong>
+                <span class="sources">{{ status.available_sources | join(', ') }}</span>
+                <span class="face-detection">
+                    {% if status.face_detection_available %}
+                    ✅ Face Detection Enabled
+                    {% else %}
+                    ⚠️ Face Detection Unavailable
+                    {% endif %}
+                </span>
+            </div>
+        </header>
+
+        <div class="search-container">
+            <form id="searchForm">
+                <div class="form-row">
+                    <div class="form-group flex-grow">
+                        <label for="query">Search Query</label>
+                        <input
+                            type="text"
+                            id="query"
+                            name="query"
+                            placeholder="e.g., Albert Einstein, Eiffel Tower, etc."
+                            required
+                            autofocus
+                        >
+                    </div>
+                    <div class="form-group">
+                        <label for="entity_type">Entity Type</label>
+                        <select id="entity_type" name="entity_type">
+                            <option value="person" selected>Person</option>
+                            <option value="place">Place</option>
+                            <option value="thing">Thing</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="max_results">Max Results</label>
+                        <input
+                            type="number"
+                            id="max_results"
+                            name="max_results"
+                            value="20"
+                            min="1"
+                            max="100"
+                        >
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="require_face" name="require_face" checked>
+                            Enable face detection for person entities
+                        </label>
+                    </div>
+                    <button type="submit" class="btn-search">
+                        🔍 Search Images
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Searching for images...</p>
+        </div>
+
+        <div id="results" class="results-container" style="display: none;">
+            <div class="results-header">
+                <h2 id="resultsTitle"></h2>
+                <div class="results-info">
+                    <span id="resultsCount"></span>
+                    <span id="filterInfo"></span>
+                </div>
+            </div>
+            <div id="imageGrid" class="image-grid"></div>
+        </div>
+
+        <div id="error" class="error-message" style="display: none;"></div>
+    </div>
+
+    <script>
+        const searchForm = document.getElementById('searchForm');
+        const loadingDiv = document.getElementById('loading');
+        const resultsDiv = document.getElementById('results');
+        const errorDiv = document.getElementById('error');
+        const imageGrid = document.getElementById('imageGrid');
+        const resultsTitle = document.getElementById('resultsTitle');
+        const resultsCount = document.getElementById('resultsCount');
+        const filterInfo = document.getElementById('filterInfo');
+        const entityTypeSelect = document.getElementById('entity_type');
+        const requireFaceCheckbox = document.getElementById('require_face');
+
+        // Update face detection checkbox visibility based on entity type
+        entityTypeSelect.addEventListener('change', function() {
+            const checkboxGroup = requireFaceCheckbox.closest('.checkbox-group');
+            if (this.value === 'person') {
+                checkboxGroup.style.display = 'block';
+            } else {
+                checkboxGroup.style.display = 'none';
+            }
+        });
+
+        searchForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const query = document.getElementById('query').value;
+            const entityType = document.getElementById('entity_type').value;
+            const maxResults = document.getElementById('max_results').value;
+            const requireFace = document.getElementById('require_face').checked;
+
+            // Show loading, hide results and errors
+            loadingDiv.style.display = 'block';
+            resultsDiv.style.display = 'none';
+            errorDiv.style.display = 'none';
+            imageGrid.innerHTML = '';
+
+            try {
+                const response = await fetch('/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        entity_type: entityType,
+                        max_results: maxResults,
+                        require_face: requireFace
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Search failed');
+                }
+
+                const data = await response.json();
+                displayResults(data);
+            } catch (error) {
+                showError('An error occurred while searching. Please try again.');
+                console.error('Search error:', error);
+            } finally {
+                loadingDiv.style.display = 'none';
+            }
+        });
+
+        function displayResults(data) {
+            resultsTitle.textContent = `Results for "${data.query}"`;
+            resultsCount.textContent = `${data.total_results} images found`;
+
+            if (data.face_filter_applied) {
+                filterInfo.textContent = '👤 Face detection filter applied';
+                filterInfo.style.display = 'inline-block';
+            } else {
+                filterInfo.style.display = 'none';
+            }
+
+            if (data.total_results === 0) {
+                imageGrid.innerHTML = '<div class="no-results">No images found. Try a different query or disable face detection.</div>';
+            } else {
+                imageGrid.innerHTML = data.images.map((img, index) => createImageCard(img, index + 1)).join('');
+            }
+
+            resultsDiv.style.display = 'block';
+        }
+
+        function createImageCard(image, index) {
+            const hasFaceIcon = image.has_face ? '👤' : '';
+            const qualityScore = image.quality_score ? image.quality_score.toFixed(2) : 'N/A';
+            const title = escapeHtml(image.title || 'Untitled');
+            const source = escapeHtml(image.source);
+            const license = escapeHtml(image.license_type);
+            const author = image.author ? escapeHtml(image.author) : 'Unknown';
+            const dimensions = image.width && image.height ? `${image.width}×${image.height}` : 'N/A';
+
+            return `
+                <div class="image-card">
+                    <div class="image-rank">#${index}</div>
+                    <div class="quality-badge" title="Quality Score">⭐ ${qualityScore}</div>
+                    ${hasFaceIcon ? `<div class="face-badge" title="Face Detected">${hasFaceIcon}</div>` : ''}
+                    <div class="image-wrapper">
+                        <img
+                            src="${image.thumbnail_url}"
+                            alt="${title}"
+                            loading="lazy"
+                            onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22300%22%3E%3Crect fill=%22%23ddd%22 width=%22400%22 height=%22300%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 fill=%22%23999%22%3EImage unavailable%3C/text%3E%3C/svg%3E'"
+                        >
+                    </div>
+                    <div class="image-info">
+                        <h3 class="image-title" title="${title}">${truncate(title, 50)}</h3>
+                        <div class="metadata">
+                            <div class="metadata-row">
+                                <span class="label">Source:</span>
+                                <span class="value">${source}</span>
+                            </div>
+                            <div class="metadata-row">
+                                <span class="label">License:</span>
+                                <span class="value license-type" title="${license}">${truncate(license, 30)}</span>
+                            </div>
+                            <div class="metadata-row">
+                                <span class="label">Author:</span>
+                                <span class="value">${truncate(author, 30)}</span>
+                            </div>
+                            <div class="metadata-row">
+                                <span class="label">Size:</span>
+                                <span class="value">${dimensions}</span>
+                            </div>
+                        </div>
+                        <div class="actions">
+                            <a href="${image.image_url}" target="_blank" class="btn btn-view">View Full</a>
+                            <a href="${image.page_url || image.image_url}" target="_blank" class="btn btn-info">Details</a>
+                            ${image.download_url ? `<a href="${image.download_url}" target="_blank" class="btn btn-download">Download</a>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function truncate(str, length) {
+            if (str.length <= length) return str;
+            return str.substring(0, length) + '...';
+        }
+    </script>
+</body>
+</html>
