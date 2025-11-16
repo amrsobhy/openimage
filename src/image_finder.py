@@ -10,6 +10,7 @@ from src.sources.wikimedia import WikimediaSource
 from src.sources.unsplash import UnsplashSource
 from src.sources.pexels import PexelsSource
 from src.sources.pixabay import PixabaySource
+from src.sources.infogouv import InfoGouvSource
 
 
 class LicensedImageFinder:
@@ -44,6 +45,10 @@ class LicensedImageFinder:
         # Pixabay (requires API key)
         if Config.PIXABAY_API_KEY:
             self.sources.append(PixabaySource(Config.PIXABAY_API_KEY))
+
+        # Info.gouv.fr (requires both Ignira and Crawl.ninja API keys)
+        if Config.IGNIRA_API_KEY and Config.CRAWL_NINJA_API_KEY:
+            self.sources.append(InfoGouvSource(Config.IGNIRA_API_KEY, Config.CRAWL_NINJA_API_KEY))
 
     def _search_source_with_cache(self, source, query: str, entity_type: str) -> List[ImageResult]:
         """Search a source with cache support.
@@ -191,7 +196,8 @@ class LicensedImageFinder:
                 'Wikimedia Commons': 0.8,
                 'Unsplash': 0.9,
                 'Pexels': 0.85,
-                'Pixabay': 0.75
+                'Pixabay': 0.75,
+                'Info.gouv.fr': 0.95  # High quality government source
             }
             score += source_scores.get(result.source, 0.5)
 
@@ -219,6 +225,7 @@ class LicensedImageFinder:
             license_scores = {
                 'Public Domain': 1.0,
                 'CC0 (Creative Commons Zero)': 1.0,
+                'Etalab 2.0 Open License': 0.95,
                 'Unsplash License': 0.95,
                 'Pexels License': 0.95,
                 'Pixabay License': 0.95,

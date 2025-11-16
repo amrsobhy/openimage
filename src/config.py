@@ -16,6 +16,12 @@ class Config:
     PEXELS_API_KEY: Optional[str] = os.getenv('PEXELS_API_KEY')
     PIXABAY_API_KEY: Optional[str] = os.getenv('PIXABAY_API_KEY')
 
+    # Ignira Search API for info.gouv.fr
+    IGNIRA_API_KEY: Optional[str] = os.getenv('IGNIRA_API_KEY')
+
+    # Crawl.ninja Scraping API
+    CRAWL_NINJA_API_KEY: Optional[str] = os.getenv('CRAWL_NINJA_API_KEY')
+
     # Request settings
     REQUEST_TIMEOUT: int = 10  # seconds
     MAX_RESULTS_PER_SOURCE: int = 10
@@ -36,5 +42,6 @@ class Config:
             'unsplash': cls.UNSPLASH_ACCESS_KEY is not None,
             'pexels': cls.PEXELS_API_KEY is not None,
             'pixabay': cls.PIXABAY_API_KEY is not None,
-            'wikimedia': True  # No API key needed
+            'wikimedia': True,  # No API key needed
+            'infogouv': cls.IGNIRA_API_KEY is not None and cls.CRAWL_NINJA_API_KEY is not None
         }
