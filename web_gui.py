@@ -88,13 +88,17 @@ def search_stream():
                     yield f"data: {json.dumps({'type': 'progress', 'message': line})}\n\n"
 
             # Send the final results
-            yield f"data: {json.dumps({'type': 'complete', 'results': {
-                'query': query,
-                'entity_type': entity_type,
-                'total_results': len(results),
-                'face_filter_applied': require_face and entity_type == 'person',
-                'images': results
-            }})}\n\n"
+            result_data = {
+                'type': 'complete',
+                'results': {
+                    'query': query,
+                    'entity_type': entity_type,
+                    'total_results': len(results),
+                    'face_filter_applied': require_face and entity_type == 'person',
+                    'images': results
+                }
+            }
+            yield f"data: {json.dumps(result_data)}\n\n"
 
         except Exception as e:
             sys.stdout = old_stdout
