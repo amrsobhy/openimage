@@ -187,7 +187,7 @@ if __name__ == '__main__':
     # Initialize finder eagerly when running directly
     image_finder = get_finder()
 
-    print("\nOpen your browser and navigate to: http://localhost:5000")
+    print("\nOpen your browser and navigate to: http://localhost:8080")
     print("\nAvailable sources:", ', '.join(image_finder.get_available_sources()))
     print("\nPress Ctrl+C to stop the server")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=8080)
