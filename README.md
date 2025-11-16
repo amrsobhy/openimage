@@ -8,7 +8,7 @@ OpenImage is a Python-based image finder that automatically retrieves legally-sa
 
 ## Features
 
-- **Multiple Image Sources**: Queries Wikimedia Commons, Unsplash, Pexels, and Pixabay
+- **Multiple Image Sources**: Queries Wikimedia Commons, Unsplash, Pexels, Pixabay, French government (Info.gouv.fr), and White House (WhiteHouse.gov)
 - **License Verification**: Ensures all images are safe for commercial use
 - **Face Detection**: For person entities, verifies images contain recognizable faces using OpenCV
 - **Quality Scoring**: Ranks images by quality, resolution, metadata completeness, and relevance
@@ -44,6 +44,8 @@ While Wikimedia Commons works without API keys, you can get better results by ad
 - **Unsplash**: https://unsplash.com/developers
 - **Pexels**: https://www.pexels.com/api/
 - **Pixabay**: https://pixabay.com/api/docs/
+- **Ignira Search API**: For French government (Info.gouv.fr) and White House (WhiteHouse.gov) sources
+- **Crawl.ninja API**: For scraping government websites to verify image credits
 
 Add these to your `.env` file.
 
@@ -153,10 +155,11 @@ The tool returns JSON with the following structure:
 
 All returned images have one of these commercial-safe licenses:
 
-- **Public Domain**: No restrictions
+- **Public Domain**: No restrictions (US government works)
 - **CC0 (Creative Commons Zero)**: No restrictions
 - **CC BY (Attribution)**: Requires attribution
 - **CC BY-SA (Attribution-ShareAlike)**: Requires attribution and same license
+- **Etalab 2.0 Open License**: Free for commercial use (French government)
 - **Unsplash License**: Free for commercial use
 - **Pexels License**: Free for commercial use
 - **Pixabay License**: Free for commercial use
@@ -164,7 +167,7 @@ All returned images have one of these commercial-safe licenses:
 ## Quality Scoring
 
 Images are scored based on:
-- Source reliability (Unsplash: 0.9, Pexels: 0.85, Wikimedia: 0.8, Pixabay: 0.75)
+- Source reliability (Government sources: 0.95, Unsplash: 0.9, Pexels: 0.85, Wikimedia: 0.8, Pixabay: 0.75)
 - Image resolution (bonus for HD and higher)
 - Metadata completeness (title, description, author)
 - Face detection (bonus for person entities)
@@ -237,7 +240,9 @@ openimage/
 │       ├── wikimedia.py       # Wikimedia Commons integration
 │       ├── unsplash.py        # Unsplash integration
 │       ├── pexels.py          # Pexels integration
-│       └── pixabay.py         # Pixabay integration
+│       ├── pixabay.py         # Pixabay integration
+│       ├── infogouv.py        # French government (Info.gouv.fr)
+│       └── whitehouse.py      # White House (WhiteHouse.gov)
 ├── tests/
 │   ├── test_models.py
 │   ├── test_sources.py
