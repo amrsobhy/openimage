@@ -8,7 +8,7 @@ OpenImage is a Python-based image finder that automatically retrieves legally-sa
 
 ## Features
 
-- **Multiple Image Sources**: Queries Wikimedia Commons, Unsplash, Pexels, Pixabay, French government (Info.gouv.fr), and White House (WhiteHouse.gov)
+- **Multiple Image Sources**: Queries Wikimedia Commons, Unsplash, Pexels, Pixabay, French government (Info.gouv.fr), White House (WhiteHouse.gov), and European Commission
 - **License Verification**: Ensures all images are safe for commercial use
 - **Face Detection**: For person entities, verifies images contain recognizable faces using OpenCV
 - **Quality Scoring**: Ranks images by quality, resolution, metadata completeness, and relevance
@@ -44,7 +44,7 @@ While Wikimedia Commons works without API keys, you can get better results by ad
 - **Unsplash**: https://unsplash.com/developers
 - **Pexels**: https://www.pexels.com/api/
 - **Pixabay**: https://pixabay.com/api/docs/
-- **Ignira Search API**: For French government (Info.gouv.fr) and White House (WhiteHouse.gov) sources
+- **Ignira Search API**: For government sources (Info.gouv.fr, WhiteHouse.gov, European Commission)
 - **Crawl.ninja API**: For scraping government websites to verify image credits
 
 Add these to your `.env` file.
@@ -242,7 +242,8 @@ openimage/
 │       ├── pexels.py          # Pexels integration
 │       ├── pixabay.py         # Pixabay integration
 │       ├── infogouv.py        # French government (Info.gouv.fr)
-│       └── whitehouse.py      # White House (WhiteHouse.gov)
+│       ├── whitehouse.py      # White House (WhiteHouse.gov)
+│       └── europa.py          # European Commission
 ├── tests/
 │   ├── test_models.py
 │   ├── test_sources.py

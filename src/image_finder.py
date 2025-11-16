@@ -14,6 +14,7 @@ from src.sources.pexels import PexelsSource
 from src.sources.pixabay import PixabaySource
 from src.sources.infogouv import InfoGouvSource
 from src.sources.whitehouse import WhiteHouseSource
+from src.sources.europa import EuropaSource
 
 
 class LicensedImageFinder:
@@ -58,6 +59,10 @@ class LicensedImageFinder:
         # WhiteHouse.gov (requires both Ignira and Crawl.ninja API keys)
         if Config.IGNIRA_API_KEY and Config.CRAWL_NINJA_API_KEY:
             self.sources.append(WhiteHouseSource(Config.IGNIRA_API_KEY, Config.CRAWL_NINJA_API_KEY))
+
+        # European Commission (requires both Ignira and Crawl.ninja API keys)
+        if Config.IGNIRA_API_KEY and Config.CRAWL_NINJA_API_KEY:
+            self.sources.append(EuropaSource(Config.IGNIRA_API_KEY, Config.CRAWL_NINJA_API_KEY))
 
     def _search_source_with_cache(self, source, query: str, entity_type: str) -> List[ImageResult]:
         """Search a source with cache support.
@@ -322,7 +327,8 @@ class LicensedImageFinder:
                 'Pexels': 0.85,
                 'Pixabay': 0.75,
                 'Info.gouv.fr': 0.95,  # High quality government source
-                'WhiteHouse.gov': 0.95  # High quality government source
+                'WhiteHouse.gov': 0.95,  # High quality government source
+                'European Commission': 0.95  # High quality government source
             }
             score += source_scores.get(result.source, 0.5)
 
