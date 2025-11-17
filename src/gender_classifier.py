@@ -1,20 +1,20 @@
-"""Gender classification for images to filter person search results."""
-
-# CRITICAL: Import CPU-only TensorFlow configuration FIRST
-from src.tf_cpu_init import configure_tensorflow_cpu
+"""Gender classification for images using OpenCV DNN (lightweight alternative to TensorFlow)."""
 
 import requests
 from io import BytesIO
 from PIL import Image
+import cv2
+import numpy as np
 from typing import Optional, Literal, TYPE_CHECKING
 from src.config import Config
 import time
 import gc
+import os
 import sys
-import traceback as tb
 
 if TYPE_CHECKING:
     from src.cache import ImageCache
+
 
 def _get_memory_usage():
     """Get current memory usage in MB."""
@@ -26,71 +26,62 @@ def _get_memory_usage():
     except:
         return -1
 
-# Check if DeepFace is available
-def _check_deepface_available():
-    """Check if DeepFace can be imported."""
-    try:
-        import importlib.util
-        spec = importlib.util.find_spec("deepface")
-        return spec is not None
-    except Exception as e:
-        print(f"[DEBUG] Error checking DeepFace availability: {e}")
-        return False
-
-print(f"[DEBUG] Memory before DeepFace check: {_get_memory_usage():.1f} MB")
-DEEPFACE_AVAILABLE = _check_deepface_available()
-
-# Import DeepFace at module level if available
-# With CPU-only config set above, this is safe and avoids reloading for every image
-if DEEPFACE_AVAILABLE:
-    print("✓ DeepFace module found - starting import...")
-    print(f"[DEBUG] Memory before DeepFace import: {_get_memory_usage():.1f} MB")
-    sys.stdout.flush()
-
-    try:
-        print("[DEBUG] Step 1: Importing deepface module...")
-        sys.stdout.flush()
-        from deepface import DeepFace
-
-        print(f"[DEBUG] Step 2: DeepFace imported successfully")
-        print(f"[DEBUG] Memory after DeepFace import: {_get_memory_usage():.1f} MB")
-        sys.stdout.flush()
-
-        print("✓ DeepFace loaded successfully")
-
-    except Exception as e:
-        print(f"⚠ FAILED to load DeepFace!")
-        print(f"[DEBUG] Error type: {type(e).__name__}")
-        print(f"[DEBUG] Error message: {e}")
-        print(f"[DEBUG] Full traceback:")
-        tb.print_exc()
-        print(f"[DEBUG] Memory at failure: {_get_memory_usage():.1f} MB")
-        sys.stdout.flush()
-        DEEPFACE_AVAILABLE = False
-else:
-    print("⚠ DeepFace not available - gender filtering disabled")
-
 
 class GenderClassifier:
-    """Classify gender in images for person entity filtering."""
+    """Classify gender in images using OpenCV DNN (lightweight, no TensorFlow)."""
+
+    # Gender labels for the model
+    GENDER_LIST = ['Male', 'Female']
+
+    # Model input size (required by the Caffe model)
+    MODEL_MEAN_VALUES = (78.4263377603, 87.7689143744, 114.895847746)
 
     def __init__(self, cache: Optional['ImageCache'] = None):
-        """Initialize the gender classifier.
+        """Initialize the gender classifier with OpenCV DNN.
 
         Args:
             cache: Optional ImageCache instance for caching gender detection results
         """
-        self.is_initialized = DEEPFACE_AVAILABLE
         self.cache = cache
         self.last_analysis_time = 0
-        self.min_delay_between_calls = 0.5  # Minimum 500ms between DeepFace calls
+        self.min_delay_between_calls = 0.1  # Much faster than DeepFace - only 100ms delay
+        self.gender_net = None
+        self.is_initialized = False
 
-        if self.is_initialized:
-            print(f"✓ Gender classification initialized (using DeepFace)")
-            print(f"[DEBUG] Memory after GenderClassifier init: {_get_memory_usage():.1f} MB")
-        else:
-            print("⚠ DeepFace not available - gender filtering disabled")
-            print("  Install with: pip install deepface")
+        print(f"[DEBUG] Memory before loading OpenCV gender model: {_get_memory_usage():.1f} MB")
+        sys.stdout.flush()
+
+        # Load the gender classification model
+        try:
+            model_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models')
+            gender_proto = os.path.join(model_dir, 'gender_deploy.prototxt')
+            gender_model = os.path.join(model_dir, 'gender_net.caffemodel')
+
+            if not os.path.exists(gender_proto) or not os.path.exists(gender_model):
+                print(f"⚠ Gender classification models not found in {model_dir}")
+                print(f"  Expected: gender_deploy.prototxt and gender_net.caffemodel")
+                return
+
+            print("✓ Loading OpenCV gender classification model...")
+            sys.stdout.flush()
+
+            self.gender_net = cv2.dnn.readNet(gender_model, gender_proto)
+
+            # Use CPU backend (no GPU needed)
+            self.gender_net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+            self.gender_net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+
+            self.is_initialized = True
+
+            print(f"✓ Gender classification initialized (OpenCV DNN - lightweight)")
+            print(f"[DEBUG] Memory after loading model: {_get_memory_usage():.1f} MB")
+            sys.stdout.flush()
+
+        except Exception as e:
+            print(f"⚠ Failed to load gender classification model: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.stdout.flush()
 
     def classify_gender_from_url(self, image_url: str) -> Optional[Literal['male', 'female']]:
         """Classify the dominant gender in an image from a URL.
@@ -110,12 +101,11 @@ class GenderClassifier:
             if cached_result is not None:
                 return cached_result
 
-        # Rate limiting: Add delay between calls to prevent resource exhaustion
+        # Rate limiting: Add delay between calls
         elapsed = time.time() - self.last_analysis_time
         if elapsed < self.min_delay_between_calls:
             time.sleep(self.min_delay_between_calls - elapsed)
 
-        tmp_path = None
         try:
             print(f"[DEBUG] Memory before image download: {_get_memory_usage():.1f} MB")
             sys.stdout.flush()
@@ -132,76 +122,56 @@ class GenderClassifier:
             )
             response.raise_for_status()
 
-            print(f"[DEBUG] Image downloaded, converting to PIL...")
+            print(f"[DEBUG] Image downloaded, converting to OpenCV format...")
             sys.stdout.flush()
 
-            # Convert to PIL Image and save to temporary location
+            # Convert to PIL Image first
             img = Image.open(BytesIO(response.content))
 
             # Convert to RGB if needed
             if img.mode != 'RGB':
                 img = img.convert('RGB')
 
-            # Save to temporary file (DeepFace works with file paths)
-            import tempfile
-            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
-                img.save(tmp_file.name, format='JPEG')
-                tmp_path = tmp_file.name
+            # Convert PIL Image to OpenCV format (BGR)
+            img_array = np.array(img)
+            img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
 
-            print(f"[DEBUG] Image saved to temp file: {tmp_path}")
-            print(f"[DEBUG] Memory before DeepFace.analyze: {_get_memory_usage():.1f} MB")
+            print(f"[DEBUG] Memory before gender classification: {_get_memory_usage():.1f} MB")
             sys.stdout.flush()
 
-            # Analyze with DeepFace directly - no multiprocessing needed!
-            print(f"[Gender Classification] Calling DeepFace.analyze...")
+            # Classify gender using OpenCV DNN
+            print(f"[Gender Classification] Analyzing image with OpenCV DNN...")
             sys.stdout.flush()
 
             analysis_start = time.time()
 
-            analysis = DeepFace.analyze(
-                img_path=tmp_path,
-                actions=['gender'],
-                enforce_detection=False,
-                silent=True,
-                detector_backend='opencv'
+            # Prepare the image for the model (224x224 input size)
+            blob = cv2.dnn.blobFromImage(
+                img_cv,
+                1.0,
+                (227, 227),
+                self.MODEL_MEAN_VALUES,
+                swapRB=False
             )
+
+            # Set input and run forward pass
+            self.gender_net.setInput(blob)
+            gender_preds = self.gender_net.forward()
 
             analysis_duration = time.time() - analysis_start
 
-            print(f"[DEBUG] DeepFace.analyze completed in {analysis_duration:.1f}s")
-            print(f"[DEBUG] Memory after DeepFace.analyze: {_get_memory_usage():.1f} MB")
+            # Get the gender with highest confidence
+            gender_idx = gender_preds[0].argmax()
+            gender_confidence = gender_preds[0][gender_idx] * 100
+
+            gender_label = self.GENDER_LIST[gender_idx]
+
+            # Map to our standard format
+            gender = 'male' if gender_label == 'Male' else 'female'
+
+            print(f"[Gender Classification] Detected: {gender} (confidence: {gender_confidence:.1f}%) in {analysis_duration:.3f}s")
+            print(f"[DEBUG] Memory after classification: {_get_memory_usage():.1f} MB")
             sys.stdout.flush()
-
-            # Parse the DeepFace analysis result
-            if isinstance(analysis, list) and len(analysis) > 0:
-                result_data = analysis[0]
-            else:
-                result_data = analysis
-
-            # Extract gender with highest confidence
-            gender_data = result_data.get('gender', {})
-
-            # DeepFace returns probabilities like {'Man': 99.5, 'Woman': 0.5}
-            if isinstance(gender_data, dict):
-                man_score = gender_data.get('Man', 0)
-                woman_score = gender_data.get('Woman', 0)
-
-                if man_score > woman_score:
-                    gender = 'male'
-                else:
-                    gender = 'female'
-
-                print(f"[Gender Classification] Detected: {gender} (Man: {man_score:.1f}%, Woman: {woman_score:.1f}%) in {analysis_duration:.1f}s")
-            else:
-                # Fallback: DeepFace sometimes returns 'Man' or 'Woman' as dominant_gender
-                dominant = result_data.get('dominant_gender', '').lower()
-                if 'man' in dominant:
-                    gender = 'male'
-                elif 'woman' in dominant:
-                    gender = 'female'
-                else:
-                    print(f"[Gender Classification] Could not determine gender from result: {result_data}")
-                    return None
 
             # Cache the result
             if self.cache:
@@ -226,18 +196,11 @@ class GenderClassifier:
             print(f"[DEBUG] Error type: {type(e).__name__}")
             print(f"[DEBUG] Error message: {e}")
             print(f"[DEBUG] Full traceback:")
-            tb.print_exc()
+            import traceback
+            traceback.print_exc()
             print(f"[DEBUG] Memory at error: {_get_memory_usage():.1f} MB")
             sys.stdout.flush()
             return None
-        finally:
-            # Clean up temporary file
-            if tmp_path:
-                import os
-                try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass
 
     def is_available(self) -> bool:
         """Check if gender classification is available."""

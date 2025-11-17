@@ -23,20 +23,17 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code (includes models directory)
 COPY . .
 
-# Create directory for cached models and database
-RUN mkdir -p /root/.deepface/weights data
+# Create directory for database cache
+RUN mkdir -p data
 
 # Expose API port
 EXPOSE 8000
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV TF_CPP_MIN_LOG_LEVEL=2
-ENV CUDA_VISIBLE_DEVICES=-1
-ENV TF_FORCE_GPU_ALLOW_GROWTH=false
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \

@@ -22,13 +22,8 @@ services:
 
       # Python configuration
       - PYTHONUNBUFFERED=1
-      - TF_CPP_MIN_LOG_LEVEL=2
-      - CUDA_VISIBLE_DEVICES=-1
-      - TF_FORCE_GPU_ALLOW_GROWTH=false
 
     volumes:
-      # Persist DeepFace model cache
-      - deepface-models:/root/.deepface/weights
       # Persist SQLite database cache
       - image-cache:/app/data
 
@@ -42,7 +37,5 @@ services:
       start_period: 60s
 
 volumes:
-  deepface-models:
-    driver: local
   image-cache:
     driver: local
