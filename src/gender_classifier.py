@@ -58,11 +58,21 @@ def _analyze_gender_in_process(tmp_path: str, result_queue):
     try:
         # CRITICAL: Ensure CPU-only mode in subprocess
         import os
+        import sys
         os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-        # Import DeepFace in the subprocess
+        # Suppress the redundant initialization messages from subprocess
+        # Save original stdout and redirect to devnull during imports
+        original_stdout = sys.stdout
+        sys.stdout = open(os.devnull, 'w')
+
+        # Import DeepFace in the subprocess (will be slow due to model loading)
         from deepface import DeepFace
+
+        # Restore stdout for actual logging
+        sys.stdout.close()
+        sys.stdout = original_stdout
 
         # Analyze the image
         analysis = DeepFace.analyze(
@@ -153,12 +163,19 @@ class GenderClassifier:
 
             # Run DeepFace in a separate process with timeout to isolate crashes
             # Using spawn mode ensures a fresh Python interpreter (no TensorFlow state corruption)
+            print(f"[Gender Classification] Loading model and analyzing (may take 20-30s)...")
+            analysis_start = time.time()
+
             result_queue = multiprocessing.Queue()
             process = multiprocessing.Process(target=_analyze_gender_in_process, args=(tmp_path, result_queue))
             process.start()
 
-            # Wait for result with timeout (10 seconds max per image)
-            process.join(timeout=10)
+            # Wait for result with timeout
+            # Spawn mode requires loading TensorFlow/DeepFace fresh each time (~15-20s)
+            # Plus actual analysis time (~5-10s) = 30s timeout
+            process.join(timeout=30)
+
+            analysis_duration = time.time() - analysis_start
 
             if process.is_alive():
                 # Process timed out - kill it
@@ -206,7 +223,7 @@ class GenderClassifier:
                 else:
                     gender = 'female'
 
-                print(f"[Gender Classification] Detected: {gender} (Man: {man_score:.1f}%, Woman: {woman_score:.1f}%)")
+                print(f"[Gender Classification] Detected: {gender} (Man: {man_score:.1f}%, Woman: {woman_score:.1f}%) in {analysis_duration:.1f}s")
             else:
                 # Fallback: DeepFace sometimes returns 'Man' or 'Woman' as dominant_gender
                 dominant = result_data.get('dominant_gender', '').lower()
