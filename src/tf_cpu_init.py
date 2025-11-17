@@ -2,41 +2,44 @@
 Force TensorFlow to use CPU-only mode.
 
 This module MUST be imported before any TensorFlow imports.
-It sets environment variables and configures TensorFlow to prevent CUDA initialization.
+It sets environment variables to prevent CUDA initialization.
+
+IMPORTANT: This module does NOT import TensorFlow itself to avoid
+crashes during initialization. It only sets environment variables.
 """
 
 import os
 
-# Set environment variables BEFORE any TensorFlow imports
+# Set comprehensive environment variables to force CPU-only mode
+# These MUST be set before TensorFlow is imported anywhere in the application
+
+# Disable GPU visibility completely
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
+# Suppress TensorFlow logging
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+# Disable GPU memory growth
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'false'
+
+# Disable oneDNN optimizations that might try to use GPU
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
-# Additional flag to prevent XLA from trying to use CUDA
+# Disable XLA entirely (XLA tries to initialize CUDA)
 os.environ['TF_XLA_FLAGS'] = '--tf_xla_enable_xla_devices=false'
+
+# Force TensorFlow to use CPU-only kernels
+os.environ['TF_DISABLE_SEGMENT_REDUCTION_OP_DETERMINISM_EXCEPTIONS'] = '1'
+
+# Prevent any CUDA initialization attempts
+os.environ['NVIDIA_VISIBLE_DEVICES'] = ''
+os.environ['NVIDIA_DRIVER_CAPABILITIES'] = ''
+
+print("✓ CPU-only mode enforced (environment variables set)")
 
 def configure_tensorflow_cpu():
     """
-    Explicitly configure TensorFlow to use CPU only.
-    This function should be called before any DeepFace operations.
+    Dummy function for backwards compatibility.
+    The actual configuration is done via environment variables above.
     """
-    try:
-        import tensorflow as tf
-
-        # Disable all GPUs
-        tf.config.set_visible_devices([], 'GPU')
-
-        # Set memory growth to False (already disabled by env var but being explicit)
-        physical_devices = tf.config.list_physical_devices('CPU')
-        print(f"✓ TensorFlow configured for CPU-only mode ({len(physical_devices)} CPU devices)")
-
-    except ImportError:
-        # TensorFlow not installed, which is fine
-        pass
-    except Exception as e:
-        print(f"⚠ Warning: Could not configure TensorFlow: {e}")
-
-
-# Configure immediately on import
-configure_tensorflow_cpu()
+    pass
