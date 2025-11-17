@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """REST API server for the Licensed Image Finder."""
 
+# CRITICAL: Force CPU-only mode BEFORE any TensorFlow imports
+# This prevents CUDA initialization errors when TensorFlow is imported by DeepFace
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'false'
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from src.image_finder import LicensedImageFinder
