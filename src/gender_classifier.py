@@ -10,9 +10,21 @@ from typing import Optional, Literal, TYPE_CHECKING
 from src.config import Config
 import time
 import gc
+import sys
+import traceback as tb
 
 if TYPE_CHECKING:
     from src.cache import ImageCache
+
+def _get_memory_usage():
+    """Get current memory usage in MB."""
+    try:
+        import psutil
+        process = psutil.Process()
+        mem_info = process.memory_info()
+        return mem_info.rss / 1024 / 1024  # Convert to MB
+    except:
+        return -1
 
 # Check if DeepFace is available
 def _check_deepface_available():
@@ -21,20 +33,39 @@ def _check_deepface_available():
         import importlib.util
         spec = importlib.util.find_spec("deepface")
         return spec is not None
-    except Exception:
+    except Exception as e:
+        print(f"[DEBUG] Error checking DeepFace availability: {e}")
         return False
 
+print(f"[DEBUG] Memory before DeepFace check: {_get_memory_usage():.1f} MB")
 DEEPFACE_AVAILABLE = _check_deepface_available()
 
 # Import DeepFace at module level if available
 # With CPU-only config set above, this is safe and avoids reloading for every image
 if DEEPFACE_AVAILABLE:
-    print("✓ DeepFace module found - loading model...")
+    print("✓ DeepFace module found - starting import...")
+    print(f"[DEBUG] Memory before DeepFace import: {_get_memory_usage():.1f} MB")
+    sys.stdout.flush()
+
     try:
+        print("[DEBUG] Step 1: Importing deepface module...")
+        sys.stdout.flush()
         from deepface import DeepFace
+
+        print(f"[DEBUG] Step 2: DeepFace imported successfully")
+        print(f"[DEBUG] Memory after DeepFace import: {_get_memory_usage():.1f} MB")
+        sys.stdout.flush()
+
         print("✓ DeepFace loaded successfully")
+
     except Exception as e:
-        print(f"⚠ Failed to load DeepFace: {e}")
+        print(f"⚠ FAILED to load DeepFace!")
+        print(f"[DEBUG] Error type: {type(e).__name__}")
+        print(f"[DEBUG] Error message: {e}")
+        print(f"[DEBUG] Full traceback:")
+        tb.print_exc()
+        print(f"[DEBUG] Memory at failure: {_get_memory_usage():.1f} MB")
+        sys.stdout.flush()
         DEEPFACE_AVAILABLE = False
 else:
     print("⚠ DeepFace not available - gender filtering disabled")
@@ -55,7 +86,8 @@ class GenderClassifier:
         self.min_delay_between_calls = 0.5  # Minimum 500ms between DeepFace calls
 
         if self.is_initialized:
-            print("✓ Gender classification initialized (using DeepFace)")
+            print(f"✓ Gender classification initialized (using DeepFace)")
+            print(f"[DEBUG] Memory after GenderClassifier init: {_get_memory_usage():.1f} MB")
         else:
             print("⚠ DeepFace not available - gender filtering disabled")
             print("  Install with: pip install deepface")
@@ -85,6 +117,9 @@ class GenderClassifier:
 
         tmp_path = None
         try:
+            print(f"[DEBUG] Memory before image download: {_get_memory_usage():.1f} MB")
+            sys.stdout.flush()
+
             # Download the image
             headers = {
                 'User-Agent': Config.USER_AGENT
@@ -96,6 +131,9 @@ class GenderClassifier:
                 stream=True
             )
             response.raise_for_status()
+
+            print(f"[DEBUG] Image downloaded, converting to PIL...")
+            sys.stdout.flush()
 
             # Convert to PIL Image and save to temporary location
             img = Image.open(BytesIO(response.content))
@@ -110,8 +148,14 @@ class GenderClassifier:
                 img.save(tmp_file.name, format='JPEG')
                 tmp_path = tmp_file.name
 
+            print(f"[DEBUG] Image saved to temp file: {tmp_path}")
+            print(f"[DEBUG] Memory before DeepFace.analyze: {_get_memory_usage():.1f} MB")
+            sys.stdout.flush()
+
             # Analyze with DeepFace directly - no multiprocessing needed!
-            print(f"[Gender Classification] Analyzing image...")
+            print(f"[Gender Classification] Calling DeepFace.analyze...")
+            sys.stdout.flush()
+
             analysis_start = time.time()
 
             analysis = DeepFace.analyze(
@@ -123,6 +167,10 @@ class GenderClassifier:
             )
 
             analysis_duration = time.time() - analysis_start
+
+            print(f"[DEBUG] DeepFace.analyze completed in {analysis_duration:.1f}s")
+            print(f"[DEBUG] Memory after DeepFace.analyze: {_get_memory_usage():.1f} MB")
+            sys.stdout.flush()
 
             # Parse the DeepFace analysis result
             if isinstance(analysis, list) and len(analysis) > 0:
@@ -165,15 +213,22 @@ class GenderClassifier:
             # Force garbage collection to free memory
             gc.collect()
 
+            print(f"[DEBUG] Memory after cleanup: {_get_memory_usage():.1f} MB")
+            sys.stdout.flush()
+
             return gender
 
         except requests.exceptions.RequestException as e:
             print(f"[Gender Classification] Error downloading image: {e}")
             return None
         except Exception as e:
-            print(f"[Gender Classification] Error classifying gender: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[Gender Classification] EXCEPTION in classify_gender_from_url!")
+            print(f"[DEBUG] Error type: {type(e).__name__}")
+            print(f"[DEBUG] Error message: {e}")
+            print(f"[DEBUG] Full traceback:")
+            tb.print_exc()
+            print(f"[DEBUG] Memory at error: {_get_memory_usage():.1f} MB")
+            sys.stdout.flush()
             return None
         finally:
             # Clean up temporary file
