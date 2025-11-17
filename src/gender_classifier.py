@@ -13,11 +13,19 @@ if TYPE_CHECKING:
     from src.cache import ImageCache
 
 # Try to import DeepFace, but make it optional
+# Wrap in comprehensive error handling to prevent worker crashes
 try:
     from deepface import DeepFace
     DEEPFACE_AVAILABLE = True
-except ImportError:
+    print("✓ DeepFace imported successfully")
+except ImportError as e:
     DEEPFACE_AVAILABLE = False
+    print(f"⚠ DeepFace not available: {e}")
+except Exception as e:
+    # Catch any other errors during DeepFace import (e.g., TensorFlow initialization errors)
+    DEEPFACE_AVAILABLE = False
+    print(f"⚠ DeepFace initialization failed: {e}")
+    print("  Gender classification will be disabled")
 
 
 class GenderClassifier:
@@ -86,11 +94,13 @@ class GenderClassifier:
                 # Analyze the image for gender
                 # enforce_detection=False allows processing even if face detection fails
                 # This is useful for images where face detection might be imperfect
+                # Wrap in try-except to catch any TensorFlow/CUDA errors
                 analysis = DeepFace.analyze(
                     img_path=tmp_path,
                     actions=['gender'],
                     enforce_detection=False,
-                    silent=True
+                    silent=True,
+                    detector_backend='opencv'  # Use OpenCV instead of default to avoid TF issues
                 )
 
                 # DeepFace returns a list of results (one per detected face)
