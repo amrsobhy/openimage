@@ -10,29 +10,45 @@ from typing import Optional, Tuple, TYPE_CHECKING, Literal
 from src.config import Config
 import time
 import gc
-from multiprocessing import Process, Queue, TimeoutError
+import multiprocessing
 from queue import Empty
+
+# CRITICAL: Use 'spawn' instead of 'fork' to avoid TensorFlow state corruption
+# Fork copies the parent's memory (including TensorFlow state) which causes crashes
+# Spawn creates a fresh Python interpreter
+try:
+    multiprocessing.set_start_method('spawn', force=True)
+    print("✓ Multiprocessing set to 'spawn' mode (prevents TensorFlow fork crashes)")
+except RuntimeError:
+    # Already set, check if it's spawn
+    if multiprocessing.get_start_method() != 'spawn':
+        print(f"⚠ Multiprocessing method already set to '{multiprocessing.get_start_method()}', gender classification may be unstable")
+    else:
+        print("✓ Multiprocessing already in 'spawn' mode")
 
 if TYPE_CHECKING:
     from src.cache import ImageCache
 
-# Try to import DeepFace, but make it optional
-# Wrap in comprehensive error handling to prevent worker crashes
-try:
-    from deepface import DeepFace
-    DEEPFACE_AVAILABLE = True
-    print("✓ DeepFace imported successfully")
-except ImportError as e:
-    DEEPFACE_AVAILABLE = False
-    print(f"⚠ DeepFace not available: {e}")
-except Exception as e:
-    # Catch any other errors during DeepFace import (e.g., TensorFlow initialization errors)
-    DEEPFACE_AVAILABLE = False
-    print(f"⚠ DeepFace initialization failed: {e}")
-    print("  Gender classification will be disabled")
+# Check if DeepFace is available WITHOUT importing it in the main process
+# This is critical because importing TensorFlow in the main process and then
+# forking subprocesses causes exit code 128 crashes
+def _check_deepface_available():
+    """Check if DeepFace can be imported without actually importing it."""
+    try:
+        import importlib.util
+        spec = importlib.util.find_spec("deepface")
+        return spec is not None
+    except Exception:
+        return False
+
+DEEPFACE_AVAILABLE = _check_deepface_available()
+if DEEPFACE_AVAILABLE:
+    print("✓ DeepFace module found (will import in subprocess)")
+else:
+    print("⚠ DeepFace not available - gender filtering disabled")
 
 
-def _analyze_gender_in_process(tmp_path: str, result_queue: Queue):
+def _analyze_gender_in_process(tmp_path: str, result_queue):
     """Run DeepFace analysis in a separate process to isolate crashes.
 
     Args:
@@ -136,8 +152,9 @@ class GenderClassifier:
                 tmp_path = tmp_file.name
 
             # Run DeepFace in a separate process with timeout to isolate crashes
-            result_queue = Queue()
-            process = Process(target=_analyze_gender_in_process, args=(tmp_path, result_queue))
+            # Using spawn mode ensures a fresh Python interpreter (no TensorFlow state corruption)
+            result_queue = multiprocessing.Queue()
+            process = multiprocessing.Process(target=_analyze_gender_in_process, args=(tmp_path, result_queue))
             process.start()
 
             # Wait for result with timeout (10 seconds max per image)
