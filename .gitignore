@@ -1,5 +1,5 @@
 # Environment variables
-.env
+# .env - now tracked in git for Docker
 
 # Cache database
 data/
