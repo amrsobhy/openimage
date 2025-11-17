@@ -1,11 +1,7 @@
 """Gender classification for images to filter person search results."""
 
-# CRITICAL: Force CPU-only mode BEFORE importing DeepFace/TensorFlow
-# This prevents CUDA initialization errors in Docker environments
-import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'false'
+# CRITICAL: Import CPU-only TensorFlow configuration FIRST
+from src.tf_cpu_init import configure_tensorflow_cpu
 
 import requests
 from io import BytesIO
