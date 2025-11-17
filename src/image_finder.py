@@ -244,14 +244,18 @@ class LicensedImageFinder:
             return results
 
         # Limit batch processing to prevent overwhelming the system
-        MAX_GENDER_ANALYSIS_BATCH = 10
+        # Spawn mode makes each analysis slow (~30s) due to fresh model loading
+        MAX_GENDER_ANALYSIS_BATCH = 3
         total_results = len(results)
         results_to_analyze = results[:MAX_GENDER_ANALYSIS_BATCH]
         results_skipped = results[MAX_GENDER_ANALYSIS_BATCH:]
 
         print(f"\nFiltering {len(results_to_analyze)} results for gender: {expected_gender}")
         if results_skipped:
-            print(f"  (Processing first {MAX_GENDER_ANALYSIS_BATCH} of {total_results} results to prevent system overload)")
+            print(f"  (Processing first {MAX_GENDER_ANALYSIS_BATCH} of {total_results} results - each takes ~30s)")
+
+        import time as time_module
+        batch_start_time = time_module.time()
 
         filtered_results = []
         classification_errors = 0
@@ -284,10 +288,12 @@ class LicensedImageFinder:
             print(f"\n  Adding {len(results_skipped)} unanalyzed results (batch limit reached)")
             filtered_results.extend(results_skipped)
 
+        batch_duration = time_module.time() - batch_start_time
+
         if classification_errors > 0:
             print(f"\n⚠ Warning: Gender classification failed for {classification_errors} images (included in results)")
 
-        print(f"After gender filtering: {len(filtered_results)} results")
+        print(f"After gender filtering: {len(filtered_results)} results (took {batch_duration:.1f}s)")
         return filtered_results
 
     def _filter_by_relevance(self, results: List[ImageResult], query: str) -> List[ImageResult]:
