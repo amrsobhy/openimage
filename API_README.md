@@ -207,7 +207,7 @@ curl -X POST http://localhost:8000/api/search \
 ```
 
 **What happens:**
-1. Searches all configured sources (Wikimedia, Info.gouv.fr, etc.)
+1. Searches all configured sources (Wikimedia, Info.gouv.fr, WhiteHouse.gov, European Commission, etc.)
 2. Uses Zeus LLM to detect gender ("female")
 3. Filters images to only include those with detected faces
 4. Uses DeepFace to classify gender in each image
@@ -355,7 +355,9 @@ All API responses include a `success` field indicating whether the request succe
 ### 🔍 Multi-Source Search
 Searches across multiple image sources:
 - **Wikimedia Commons** - Free media repository
-- **Info.gouv.fr** - French government images (requires API keys)
+- **Info.gouv.fr** - French government images (requires Ignira + Crawl.ninja API keys)
+- **WhiteHouse.gov** - US government images (requires Ignira + Crawl.ninja API keys)
+- **European Commission** - EU official images under CC BY 4.0 (requires Ignira + Crawl.ninja API keys)
 - **Unsplash** - High-quality photos (optional, requires API key)
 - **Pexels** - Free stock photos (optional, requires API key)
 - **Pixabay** - Free images (optional, requires API key)
@@ -393,7 +395,7 @@ Smart filtering ensures results match your query:
 Configure the API using environment variables:
 
 ```bash
-# Required for Info.gouv.fr source
+# Required for government sources (Info.gouv.fr, WhiteHouse.gov, European Commission)
 IGNIRA_API_KEY=your_ignira_api_key
 CRAWL_NINJA_API_KEY=your_crawl_ninja_api_key
 
