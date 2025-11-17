@@ -52,3 +52,6 @@ tests/
 Dockerfile
 docker-compose.yml
 .dockerignore
+
+# Make sure .env is included for configuration
+!.env
