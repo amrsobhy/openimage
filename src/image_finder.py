@@ -243,13 +243,22 @@ class LicensedImageFinder:
             print(f"\n⚠ Could not determine gender from query, skipping gender filtering")
             return results
 
-        print(f"\nFiltering {len(results)} results for gender: {expected_gender}")
+        # Limit batch processing to prevent overwhelming the system
+        MAX_GENDER_ANALYSIS_BATCH = 10
+        total_results = len(results)
+        results_to_analyze = results[:MAX_GENDER_ANALYSIS_BATCH]
+        results_skipped = results[MAX_GENDER_ANALYSIS_BATCH:]
+
+        print(f"\nFiltering {len(results_to_analyze)} results for gender: {expected_gender}")
+        if results_skipped:
+            print(f"  (Processing first {MAX_GENDER_ANALYSIS_BATCH} of {total_results} results to prevent system overload)")
 
         filtered_results = []
         classification_errors = 0
 
-        for result in results:
+        for idx, result in enumerate(results_to_analyze, 1):
             try:
+                print(f"  [{idx}/{len(results_to_analyze)}] Analyzing: {result.title[:50]}...")
                 detected_gender = self.gender_classifier.classify_gender_from_url(
                     result.thumbnail_url or result.image_url
                 )
@@ -269,6 +278,11 @@ class LicensedImageFinder:
                 classification_errors += 1
                 # Include images where classification fails
                 filtered_results.append(result)
+
+        # Add skipped results to the end (unfiltered)
+        if results_skipped:
+            print(f"\n  Adding {len(results_skipped)} unanalyzed results (batch limit reached)")
+            filtered_results.extend(results_skipped)
 
         if classification_errors > 0:
             print(f"\n⚠ Warning: Gender classification failed for {classification_errors} images (included in results)")
