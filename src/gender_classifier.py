@@ -6,34 +6,17 @@ from src.tf_cpu_init import configure_tensorflow_cpu
 import requests
 from io import BytesIO
 from PIL import Image
-from typing import Optional, Tuple, TYPE_CHECKING, Literal
+from typing import Optional, Literal, TYPE_CHECKING
 from src.config import Config
 import time
 import gc
-import multiprocessing
-from queue import Empty
-
-# CRITICAL: Use 'spawn' instead of 'fork' to avoid TensorFlow state corruption
-# Fork copies the parent's memory (including TensorFlow state) which causes crashes
-# Spawn creates a fresh Python interpreter
-try:
-    multiprocessing.set_start_method('spawn', force=True)
-    print("✓ Multiprocessing set to 'spawn' mode (prevents TensorFlow fork crashes)")
-except RuntimeError:
-    # Already set, check if it's spawn
-    if multiprocessing.get_start_method() != 'spawn':
-        print(f"⚠ Multiprocessing method already set to '{multiprocessing.get_start_method()}', gender classification may be unstable")
-    else:
-        print("✓ Multiprocessing already in 'spawn' mode")
 
 if TYPE_CHECKING:
     from src.cache import ImageCache
 
-# Check if DeepFace is available WITHOUT importing it in the main process
-# This is critical because importing TensorFlow in the main process and then
-# forking subprocesses causes exit code 128 crashes
+# Check if DeepFace is available
 def _check_deepface_available():
-    """Check if DeepFace can be imported without actually importing it."""
+    """Check if DeepFace can be imported."""
     try:
         import importlib.util
         spec = importlib.util.find_spec("deepface")
@@ -42,51 +25,19 @@ def _check_deepface_available():
         return False
 
 DEEPFACE_AVAILABLE = _check_deepface_available()
+
+# Import DeepFace at module level if available
+# With CPU-only config set above, this is safe and avoids reloading for every image
 if DEEPFACE_AVAILABLE:
-    print("✓ DeepFace module found (will import in subprocess)")
+    print("✓ DeepFace module found - loading model...")
+    try:
+        from deepface import DeepFace
+        print("✓ DeepFace loaded successfully")
+    except Exception as e:
+        print(f"⚠ Failed to load DeepFace: {e}")
+        DEEPFACE_AVAILABLE = False
 else:
     print("⚠ DeepFace not available - gender filtering disabled")
-
-
-def _analyze_gender_in_process(tmp_path: str, result_queue):
-    """Run DeepFace analysis in a separate process to isolate crashes.
-
-    Args:
-        tmp_path: Path to the temporary image file
-        result_queue: Queue to put the result in
-    """
-    try:
-        # CRITICAL: Ensure CPU-only mode in subprocess
-        import os
-        import sys
-        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-        # Suppress the redundant initialization messages from subprocess
-        # Save original stdout and redirect to devnull during imports
-        original_stdout = sys.stdout
-        sys.stdout = open(os.devnull, 'w')
-
-        # Import DeepFace in the subprocess (will be slow due to model loading)
-        from deepface import DeepFace
-
-        # Restore stdout for actual logging
-        sys.stdout.close()
-        sys.stdout = original_stdout
-
-        # Analyze the image
-        analysis = DeepFace.analyze(
-            img_path=tmp_path,
-            actions=['gender'],
-            enforce_detection=False,
-            silent=True,
-            detector_backend='opencv'
-        )
-
-        # Put the result in the queue
-        result_queue.put(('success', analysis))
-    except Exception as e:
-        result_queue.put(('error', str(e)))
 
 
 class GenderClassifier:
@@ -111,8 +62,6 @@ class GenderClassifier:
 
     def classify_gender_from_url(self, image_url: str) -> Optional[Literal['male', 'female']]:
         """Classify the dominant gender in an image from a URL.
-
-        Uses process isolation and timeouts to prevent crashes.
 
         Args:
             image_url: URL of the image to analyze
@@ -161,50 +110,21 @@ class GenderClassifier:
                 img.save(tmp_file.name, format='JPEG')
                 tmp_path = tmp_file.name
 
-            # Run DeepFace in a separate process with timeout to isolate crashes
-            # Using spawn mode ensures a fresh Python interpreter (no TensorFlow state corruption)
-            print(f"[Gender Classification] Loading model and analyzing (may take 20-30s)...")
+            # Analyze with DeepFace directly - no multiprocessing needed!
+            print(f"[Gender Classification] Analyzing image...")
             analysis_start = time.time()
 
-            result_queue = multiprocessing.Queue()
-            process = multiprocessing.Process(target=_analyze_gender_in_process, args=(tmp_path, result_queue))
-            process.start()
-
-            # Wait for result with timeout
-            # Spawn mode requires loading TensorFlow/DeepFace fresh each time (~15-20s)
-            # Plus actual analysis time (~5-10s) = 30s timeout
-            process.join(timeout=30)
+            analysis = DeepFace.analyze(
+                img_path=tmp_path,
+                actions=['gender'],
+                enforce_detection=False,
+                silent=True,
+                detector_backend='opencv'
+            )
 
             analysis_duration = time.time() - analysis_start
 
-            if process.is_alive():
-                # Process timed out - kill it
-                print(f"[Gender Classification] Analysis timed out for: {image_url[:50]}...")
-                process.terminate()
-                process.join(timeout=2)
-                if process.is_alive():
-                    process.kill()
-                    process.join()
-                return None
-
-            # Check if process exited with error
-            if process.exitcode != 0:
-                print(f"[Gender Classification] Process crashed with exit code {process.exitcode}")
-                return None
-
-            # Get result from queue
-            try:
-                status, result = result_queue.get_nowait()
-            except Empty:
-                print(f"[Gender Classification] No result from process")
-                return None
-
-            if status == 'error':
-                print(f"[Gender Classification] Error in subprocess: {result}")
-                return None
-
             # Parse the DeepFace analysis result
-            analysis = result
             if isinstance(analysis, list) and len(analysis) > 0:
                 result_data = analysis[0]
             else:
